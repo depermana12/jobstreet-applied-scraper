@@ -9,8 +9,9 @@ configurations = {
     "base_url": "https://id.jobstreet.com/id/my-activity/applied-jobs",
     "email": "deddiapermana97@gmail.com",
     "firefox_profile_dir": os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles"),
-    "profile_name": "default", # this is clean profile. 'default-release' is existing profile but hangs
+    "profile_name": "default",  # this is clean profile. 'default-release' is existing profile but hangs
 }
+
 
 def init_driver(use_profile: str):
     options = Options()
@@ -24,12 +25,14 @@ def init_driver(use_profile: str):
                 profile_path = os.path.join(firefox_profile_dir, folder)
                 break
     if not profile_path:
-        raise FileNotFoundError(f"Firefox profile '{use_profile}' not found in {firefox_profile_dir}")
+        raise FileNotFoundError(
+            f"Firefox profile '{use_profile}' not found in {firefox_profile_dir}"
+        )
 
     profile = FirefoxProfile(profile_path)
     options.profile = profile
 
-    options.add_argument("--start-maximized") 
+    options.add_argument("--start-maximized")
     options.set_preference("dom.webnotifications.enabled", False)
     options.set_preference("dom.push.enabled", False)
     options.set_preference("permissions.default.desktop-notification", 2)
