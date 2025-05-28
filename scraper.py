@@ -77,26 +77,16 @@ class JobStreetScraper:
 
             current_url = self.driver.current_url
 
-            try:
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});", next_btn
-                )
-            except Exception as e:
-                print(f"Scroll into view failed: {e}")
-
-            try:
-                self.driver.execute_script("arguments[0].click();", next_btn)
-            except Exception as e:
-                print(f"JS click failed: {e}")
-                return False
-
-            # Wait for URL change or job cards to reload
-            wait.until(lambda d: d.current_url != current_url)
-            wait.until(
-                EC.presence_of_all_elements_located(
-                    (By.CSS_SELECTOR, "[data-automation^='job-item-']")
-                )
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});", next_btn
             )
+            next_btn.click()
+
+            wait.until(lambda d: d.current_url != current_url)
+            time.sleep(3)
+
+            self.driver.execute_script("window.scrollTo(0, 0);")
+
             print("Successfully navigated to next page")
             return True
 
@@ -155,7 +145,12 @@ class JobStreetScraper:
                         job_info["job_link"] = drawer.find_element(
                             By.TAG_NAME, "a"
                         ).get_attribute("href")
-                        job_info["cv_name"]
+                        job_info["cv_name"] = drawer.find_element(
+                            By.CSS_SELECTOR, "[data-automation='job-item-resume]"
+                        ).text.strip()
+                        job_info["cover_letter"] = drawer.find_element(
+                            By.CSS_SELECTOR, "[data-automation='job-item-cover-letter]"
+                        ).text.strip()
 
                         parsed_details = parse_job(raw_details_data)
                         job_info.update(parsed_details)
@@ -171,11 +166,7 @@ class JobStreetScraper:
                     self.jobs_data.append(job_info)
                     total_jobs += 1
 
-                self.driver.execute_script("window.scrollTo(0, 0);")
-
                 print(f"Completed page {page_num}, total jobs: {total_jobs}")
-
-                current_url = self.driver.current_url
 
                 if max_pages and page_num >= max_pages:
                     print(f"Reached maximum pages: {max_pages}")
@@ -185,19 +176,7 @@ class JobStreetScraper:
                     print("No more pages available")
                     break
 
-                try:
-                    WebDriverWait(self.driver, 10).until(
-                        lambda d: d.current_url != current_url
-                    )
-                    WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_all_elements_located(
-                            (By.CSS_SELECTOR, "[data-automation^='job-item-']")
-                        )
-                    )
-                    time.sleep(3)
-                except Exception as e:
-                    print(f"Page load wait failed: {e}")
-                    break
+            print(f"Scraping completed. Total jobs collected: {total_jobs}")
             return self.jobs_data
         finally:
             print(f"Scraping completed. Total jobs collected: {total_jobs}")
