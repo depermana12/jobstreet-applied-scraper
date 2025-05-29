@@ -10,6 +10,9 @@ configurations = {
     "email": "deddiapermana97@gmail.com",
     "firefox_profile_dir": os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles"),
     "profile_name": "default",  # this is clean profile. 'default-release' is existing profile but hangs
+    "default_wait": 20,
+    "short_wait": 3,
+    "default_not_available": "N/A",
 }
 
 
