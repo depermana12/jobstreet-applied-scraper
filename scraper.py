@@ -54,7 +54,7 @@ class JobStreetScraper:
                 attr = element.get_attribute("data-automation")
                 return int(attr.split("-")[-1])
             except (ValueError, AttributeError):
-                return float("inf")
+                return 0
 
         return sorted(elements, key=get_index)
 
@@ -71,14 +71,11 @@ class JobStreetScraper:
         try:
             wait = WebDriverWait(self.driver, 10)
             next_btn = self.driver.find_element(By.CSS_SELECTOR, "[aria-label='Next']")
-            if not next_btn:
-                print("Next page button not found")
-                return False
-
             current_url = self.driver.current_url
 
             self.driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center'});", next_btn
+                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
+                next_btn,
             )
             next_btn.click()
 
