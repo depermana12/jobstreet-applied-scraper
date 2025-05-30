@@ -3,6 +3,7 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     StaleElementReferenceException,
     TimeoutException,
+    WebDriverException,
 )
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
@@ -23,28 +24,45 @@ class JobStreetScraper:
 
     def _login_and_navigate(self):
         """Navigate to applied jobs page and handle login"""
+        try:
+            self.driver.get(self.base_url)
+        except WebDriverException as e:
+            print(f"Error navigating to {self.base_url}: {e}")
+            return False
 
-        self.driver.get(self.base_url)
         wait = WebDriverWait(self.driver, self.LONG_WAIT)
 
         try:
+            if "applied-jobs" in self.driver.current_url.lower():
+                print("Already logged in, skipping OTP")
+                return True
+
             email_input = wait.until(
                 EC.presence_of_element_located((By.ID, "emailAddress"))
             )
+            email_input.clear()
             email_input.send_keys(self.email)
             time.sleep(0.5)
             email_input.send_keys(Keys.ENTER)
 
-        except TimeoutException:
+        except (TimeoutException, WebDriverException) as e:
+            print(f"Error during email input or already logged in: {e}")
+
             if "applied-jobs" in self.driver.current_url.lower():
                 print("Already logged in, skipping OTP")
                 return True
-            raise
+            return False
+
+        return self._handle_otp()
+
+    def _handle_otp(self):
+        """Handle OTP input if required"""
+        wait = WebDriverWait(self.driver, self.LONG_WAIT)
 
         while True:
             if "applied-jobs" in self.driver.current_url.lower():
                 try:
-                    WebDriverWait(self.driver, self.LONG_WAIT).until(
+                    wait.until(
                         lambda d: d.find_element(
                             By.CSS_SELECTOR, "[data-automation^='job-item-']"
                         )
@@ -52,10 +70,8 @@ class JobStreetScraper:
                     print("Logged in from web page")
                     return True
                 except TimeoutException:
-                    print(
-                        "Redirected to applied jobs, but jobs not found, probably need to wait a bit more"
-                    )
-                    time.sleep(2)
+                    print("Timeout while waiting for job cards to load")
+                    return False
 
             try:
                 print("Please enter the OTP sent to your email")
@@ -65,7 +81,7 @@ class JobStreetScraper:
                     print("Invalid OTP format. Please enter a 6-digit number.")
                     continue
 
-                otp_field = WebDriverWait(self.driver, self.LONG_WAIT).until(
+                otp_field = wait.until(
                     EC.presence_of_element_located(
                         (By.CSS_SELECTOR, "input[aria-label='verification input']")
                     )
@@ -80,6 +96,7 @@ class JobStreetScraper:
 
                 time.sleep(2)
 
+                # check otp error message
                 try:
                     error_alert = self.driver.find_element(
                         By.CSS_SELECTOR, "[aria-live='polite']"
@@ -90,17 +107,23 @@ class JobStreetScraper:
                 except NoSuchElementException:
                     pass
 
-                WebDriverWait(self.driver, self.LONG_WAIT).until(
-                    lambda d: "applied" in d.current_url.lower()
-                    and d.find_elements(
-                        By.CSS_SELECTOR, "[data-automation^='job-item-']"
+                # wait for the page to load after OTP
+                try:
+                    wait.until(
+                        lambda d: d.find_elements(
+                            By.CSS_SELECTOR, "[data-automation^='job-item-']"
+                        )
                     )
-                )
-                print("Successfully logged in and navigated to applied jobs page")
-                return True
 
-            except TimeoutException:
-                print("Timeout during OTP input or page validation.")
+                    print("Successfully logged in and navigated to applied jobs page")
+                    return True
+
+                except TimeoutException:
+                    print("Timeout while waiting for job cards to load after OTP")
+                    return False
+
+            except (TimeoutException, WebDriverException) as e:
+                print(f"Exception during OTP input or field loading: {e}")
                 return False
 
     def _find_job_cards(self):
