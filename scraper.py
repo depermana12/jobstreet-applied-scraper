@@ -152,8 +152,9 @@ class JobStreetScraper:
             try:
                 attr = element.get_attribute("data-automation")
                 return int(attr.split("-")[-1])
-            except (ValueError, AttributeError):
-                return 0
+            except (ValueError, AttributeError, StaleElementReferenceException) as e:
+                print(f"Error getting index from element: {e}")
+            return 0
 
         return sorted(elements, key=get_index)
 
@@ -235,11 +236,14 @@ class JobStreetScraper:
             print(f"Failed to go to next page: {e}")
             return False
 
-    def close(self):
+    def close_browser(self):
         """Close the browser"""
         if hasattr(self, "driver") and self.driver:
-            self.driver.quit()
-            print("Browser closed")
+            try:
+                self.driver.quit()
+                print("Browser closed")
+            except WebDriverException as e:
+                print(f"Error closing the browser: {e}")
 
     def scrape_all_jobs(self, max_pages=None):
         """Main scraping method"""
