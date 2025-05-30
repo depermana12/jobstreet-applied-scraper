@@ -25,3 +25,5 @@ def cli_scraper_parser():
         default="json",
         help="Export format for the scraped data",
     )
+
+    return parser.parse_args()
