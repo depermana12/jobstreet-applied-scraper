@@ -13,10 +13,10 @@ import re
 
 
 class JobStreetScraper:
-    def __init__(self, use_profile="default"):
-        self.driver = init_driver(use_profile=use_profile)
+    def __init__(self, email):
+        self.email = email
+        self.driver = init_driver("default")
         self.base_url = configurations["base_url"]
-        self.email = configurations["email"]
         self.LONG_WAIT = configurations["default_wait"]
         self.SHORT_WAIT = configurations["short_wait"]
         self.jobs_data = []
@@ -80,13 +80,15 @@ class JobStreetScraper:
 
                 time.sleep(2)
 
-                error_alert = self.driver.find_element(
-                    By.CSS_SELECTOR, "[aria-live='polite']"
-                )
-
-                if "invalid code" in error_alert.text.strip().lower():
-                    print("Invalid OTP, try again...")
-                    continue  # retry otp
+                try:
+                    error_alert = self.driver.find_element(
+                        By.CSS_SELECTOR, "[aria-live='polite']"
+                    )
+                    if "invalid code" in error_alert.text.strip().lower():
+                        print("Invalid OTP, try again...")
+                        continue  # retry otp
+                except NoSuchElementException:
+                    pass
 
                 WebDriverWait(self.driver, self.LONG_WAIT).until(
                     lambda d: "applied" in d.current_url.lower()
@@ -175,8 +177,8 @@ class JobStreetScraper:
     def scrape_all_jobs(self, max_pages=None):
         """Main scraping method"""
 
-        print("Starting job scraping")
         self._login_and_navigate()
+        print("Starting job scraping")
 
         page_num = 0
         total_jobs = 0
