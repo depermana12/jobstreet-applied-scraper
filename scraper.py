@@ -155,11 +155,13 @@ class JobStreetScraper:
 
     def _close_drawer(self):
         """Close the job details drawer"""
-
-        close_btn = self.driver.find_element(By.CSS_SELECTOR, "[aria-label='Close']")
-        close_btn.click()
-        time.sleep(1)  # do not remove this
-        return True
+        close_btn = self._find_element(
+            By.CSS_SELECTOR, "[aria-label='Close']", timeout=self.SHORT_WAIT
+        )
+        if close_btn and self._click_element(close_btn):
+            time.sleep(1)  # wait for drawer to close, do not remove this
+            return True
+        return False
 
     def _click_element(self, element):
         """Click an element with scroll into view and fallback to JavaScript click"""
