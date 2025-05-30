@@ -132,13 +132,17 @@ class JobStreetScraper:
                     d.find_elements(By.CSS_SELECTOR, "[data-automation^='job-item-']")
                 )
             )
-
             if elements:
                 print(f"Found {len(elements)} job cards")
                 return self._sort_job_cards(elements)
+            else:
+                return []
 
-        except NoSuchElementException:
+        except TimeoutException:
             print("No job cards found on this page")
+            return []
+        except WebDriverException as e:
+            print(f"WebDriver exception while finding job cards: {e}")
             return []
 
     def _sort_job_cards(self, elements):
