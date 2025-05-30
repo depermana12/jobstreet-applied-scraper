@@ -33,10 +33,6 @@ class JobStreetScraper:
         wait = WebDriverWait(self.driver, self.LONG_WAIT)
 
         try:
-            if "applied-jobs" in self.driver.current_url.lower():
-                print("Already logged in, skipping OTP")
-                return True
-
             email_input = wait.until(
                 EC.presence_of_element_located((By.ID, "emailAddress"))
             )
@@ -46,7 +42,7 @@ class JobStreetScraper:
             email_input.send_keys(Keys.ENTER)
 
         except (TimeoutException, WebDriverException) as e:
-            print(f"Error during email input or already logged in: {e}")
+            print(f"Error during email input : {e}")
 
             if "applied-jobs" in self.driver.current_url.lower():
                 print("Already logged in, skipping OTP")
@@ -241,10 +237,6 @@ class JobStreetScraper:
                                 (By.CSS_SELECTOR, "[role='dialog']")
                             )
                         )
-                        raw_details_data = drawer.text.strip()
-                        url_text = drawer.find_element(By.TAG_NAME, "a").get_attribute(
-                            "href"
-                        )
 
                         # ------- INFO SECTION -------
                         try:
@@ -286,7 +278,9 @@ class JobStreetScraper:
                                     info_url = info_location.find_element(
                                         By.XPATH, "./following-sibling::span[1]/a"
                                     )
-                                url_text = info_url.get_attribute("href")
+                                url_text = (
+                                    info_url.get_attribute("href").strip().split("?")[0]
+                                )
                             except NoSuchElementException:
                                 url_text = "N/A"
 
@@ -307,37 +301,41 @@ class JobStreetScraper:
                             status_wrapper = details_elem.find_element(
                                 By.XPATH, "./following-sibling::div[1]"
                             )
-                            status_blocks = status_wrapper.find_elements(
-                                By.XPATH, "./div/div[1]"
+                            status_blocks = status_wrapper.find_element(
+                                By.XPATH, ".//div/div/div/div[2]/div"
                             )
+                            try:
+                                span_elements = status_blocks.find_elements(
+                                    By.TAG_NAME, "span"
+                                )[:2]
 
-                            application_status = []
-                            for block in status_blocks:
-                                try:
-                                    second_div = block.find_element(
-                                        By.XPATH, "./div/div[2]"
-                                    )
-                                    spans = second_div.find_elements(
-                                        By.TAG_NAME, "span"
-                                    )
-                                    if len(spans) >= 2:
-                                        status_text = spans[0].text.strip()
-                                        status_date = (
-                                            spans[1].text.strip().split("\n")[0]
-                                        )
-                                        application_status.append(
-                                            {"status": status_text, "date": status_date}
-                                        )
-                                    else:
-                                        print(
-                                            "Missing status data in block, skipping..."
-                                        )
-                                        print(
-                                            f"Found spans: {[span.text for span in spans]}"
-                                        )
+                                application_status = []
 
-                                except NoSuchElementException:
-                                    print("Missing status data in block, skipping...")
+                                if len(span_elements) >= 2:
+                                    status_text = span_elements[0].text.strip()
+                                    status_updated = (
+                                        span_elements[1].text.strip().split("\n")[0]
+                                    )
+                                    application_status.append(
+                                        {
+                                            "status": status_text,
+                                            "updated_at": status_updated,
+                                        }
+                                    )
+                                else:
+                                    print("Missing status data in span, skipping...")
+
+                            except NoSuchElementException:
+                                print("Missing status data in span, skipping...")
+
+                            try:
+                                status_wrapper.find_element(
+                                    By.XPATH,
+                                    ".//following-sibling::div//span[contains(text(), 'Lowongan kerja ini telah kedaluwarsa')]",
+                                )
+                                is_expired = True
+                            except NoSuchElementException:
+                                is_expired = False
 
                             cv_elem = WebDriverWait(drawer, 3).until(
                                 EC.presence_of_element_located(
@@ -378,6 +376,9 @@ class JobStreetScraper:
                         # ------- Assign Data -------
                         job_info.update(
                             {
+                                "data_retrieved": time.strftime(
+                                    "%d-%m-%Y %H:%M:%S", time.localtime()
+                                ),
                                 "job_title": info_title.text.strip(),
                                 "company_name": info_company.text.strip(),
                                 "job_location": info_location.text.strip(),
@@ -386,6 +387,7 @@ class JobStreetScraper:
                                 "resume": cv_text,
                                 "cover_letter": cl_text,
                                 "total_applicants": applicants_text,
+                                "is_expired": is_expired,
                                 "application_status": application_status,
                             }
                         )
