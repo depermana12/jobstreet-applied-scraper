@@ -4,6 +4,8 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     TimeoutException,
     WebDriverException,
+    ElementClickInterceptedException,
+    ElementNotInteractableException,
 )
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
@@ -159,6 +161,46 @@ class JobStreetScraper:
         time.sleep(1)  # do not remove this
         return True
 
+    def _click_element(self, element):
+        """Click an element with scroll into view and fallback to JavaScript click"""
+        try:
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                element,
+            )
+            WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                EC.element_to_be_clickable(element)
+            )
+            element.click()
+            time.sleep(0.5)  # wait for any potential animations
+            return True
+        except (ElementClickInterceptedException, ElementNotInteractableException):
+            print("Element not clickable, javaScript click fallback")
+            try:
+                self.driver.execute_script("arguments[0].click();", element)
+                time.sleep(0.5)  # wait for any potential animations
+                return True
+            except Exception as e:
+                print(f"Oh no JavaScript click also failed: {e}")
+                return False
+        except (StaleElementReferenceException, WebDriverException) as e:
+            print(f"Error clicking element: {e}")
+            return False
+
+    def _find_element(self, by, value, timeout=None):
+        """Find an element with optional timeout"""
+        timeout = timeout or self.SHORT_WAIT
+        try:
+            return WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((by, value))
+            )
+        except TimeoutException:
+            print(f"Element not found: {value}")
+            return None
+        except WebDriverException as e:
+            print(f"WebDriver exception while finding element: {e}")
+            return None
+
     def _go_to_next_page(self):
         """Navigate to the next page if available"""
         try:
@@ -216,8 +258,8 @@ class JobStreetScraper:
                     print(f"Processing job {i}/{len(job_cards)}")
 
                     job_info = {
-                        "job_platform": "JobStreet",
                         "id": total_jobs + 1,
+                        "job_platform": "JobStreet",
                     }
 
                     try:
@@ -264,6 +306,7 @@ class JobStreetScraper:
                                 )
                                 salary_text = info_salary.text.strip()
                                 has_salary = "per month" in salary_text.lower()
+
                             except NoSuchElementException:
                                 info_salary = None
                                 salary_text = "N/A"
@@ -376,7 +419,7 @@ class JobStreetScraper:
                         # ------- Assign Data -------
                         job_info.update(
                             {
-                                "data_retrieved": time.strftime(
+                                "data_retrieved_at": time.strftime(
                                     "%d-%m-%Y %H:%M:%S", time.localtime()
                                 ),
                                 "job_title": info_title.text.strip(),
