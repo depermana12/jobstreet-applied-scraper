@@ -231,7 +231,6 @@ class JobStreetScraper:
                 EC.presence_of_element_located((By.CSS_SELECTOR, "[role='dialog']"))
             )
             if drawer:
-                print("Job card drawer opened successfully")
                 return drawer
             else:
                 print("Job card drawer not found after clicking header")
@@ -268,12 +267,19 @@ class JobStreetScraper:
             )
 
             # get the location of salary which is can exist or not
+            # if it get a link, it means the salary is not available
             try:
                 info_salary = info_location.find_element(
                     By.XPATH, "./following-sibling::span[1]"
                 )
-                salary_text = info_salary.text.strip()
-                has_salary = "per month" in salary_text.lower()
+                try:
+                    info_salary.find_element(By.TAG_NAME, "a")
+                    salary_text = "N/A"
+                    has_salary = False
+                    info_salary = None
+                except NoSuchElementException:
+                    salary_text = info_salary.text.strip()
+                    has_salary = "per month" in salary_text.lower()
 
             except NoSuchElementException:
                 info_salary = None
@@ -283,7 +289,7 @@ class JobStreetScraper:
             # if the info_salary exists, info_url is the next sibling, otherwise
             # info_url is the next sibling of info_location
             try:
-                if has_salary:
+                if info_salary is not None and has_salary:
                     info_url = info_salary.find_element(
                         By.XPATH, "./following-sibling::span[1]/a"
                     )
@@ -292,7 +298,7 @@ class JobStreetScraper:
                         By.XPATH, "./following-sibling::span[1]/a"
                     )
                 url_text = info_url.get_attribute("href").strip().split("?")[0]
-            except NoSuchElementException:
+            except (NoSuchElementException, AttributeError):
                 url_text = "N/A"
 
             results.update(
@@ -322,24 +328,29 @@ class JobStreetScraper:
             wrapper = status_holder.find_element(
                 By.XPATH, "./following-sibling::div[1]"
             )
-            status_wrapper = wrapper.find_element(By.XPATH, ".//div/div/div/div[2]/div")
+            status_blocks = wrapper.find_elements(By.XPATH, "./div/div")
 
-            try:
-                status_elements = status_wrapper.find_elements(By.TAG_NAME, "span")[:2]
-                if len(status_elements) >= 2:
-                    status_text = status_elements[0].text.strip()
-                    status_updated = status_elements[1].text.strip().split("\n")[0]
-                    application_status.append(
-                        {
-                            "status": status_text,
-                            "updated_at": status_updated,
-                        }
-                    )
-                else:
-                    print("Status elements are less than 2, skipping...")
-            except NoSuchElementException:
-                print("Missing status data in span, skipping...")
+            for block in status_blocks:
+                try:
+                    status_wrapper = block.find_element(By.XPATH, "./div/div[2]/div")
+                    status_elements = status_wrapper.find_elements(By.TAG_NAME, "span")[
+                        :2
+                    ]
+                    if len(status_elements) >= 2:
+                        status_text = status_elements[0].text.strip()
+                        status_updated = status_elements[1].text.strip().split("\n")[0]
+                        application_status.append(
+                            {
+                                "status": status_text,
+                                "updated_at": status_updated,
+                            }
+                        )
 
+                except NoSuchElementException:
+                    # print("Missing status data in span, skipping...")
+                    pass
+            if not application_status:
+                print("No valid status data found in any blocks")
             try:
                 wrapper.find_element(
                     By.XPATH,
@@ -365,13 +376,17 @@ class JobStreetScraper:
             "cover_letter": "N/A",
         }
 
+        def clean_text(text):
+            # remove U+2060 and other invisible characters
+            return re.sub(r"[\u2060\u200B-\u200F\uFEFF]", "", text).strip()
+
         try:
             cv_element = WebDriverWait(drawer, self.SHORT_WAIT).until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "span[data-automation='job-item-resume']")
                 )
             )
-            cv_text = cv_element.text.strip()
+            cv_text = clean_text(cv_element.text)
         except (TimeoutException, WebDriverException):
             print("Resume element not found or timed out")
             cv_text = "N/A"
@@ -381,7 +396,7 @@ class JobStreetScraper:
                     (By.CSS_SELECTOR, "span[data-automation='job-item-cover-letter']")
                 )
             )
-            cl_text = cl_element.text.replace("\u2060", "").strip()
+            cl_text = clean_text(cl_element.text)
         except (TimeoutException, WebDriverException):
             print("Cover letter element not found or timed out")
             cl_text = "N/A"

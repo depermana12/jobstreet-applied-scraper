@@ -16,7 +16,7 @@ def _get_timestamp_filename(prefix: str, extension: str) -> str:
     return os.path.join(EXPORT_DIR, filename)
 
 
-def export_to_csv(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
+def _export_to_csv(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
     """Export jobs data to CSV file"""
     filename = _get_timestamp_filename(filename, "csv")
 
@@ -27,7 +27,7 @@ def export_to_csv(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
     return filename
 
 
-def export_to_json(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
+def _export_to_json(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
     """Export jobs data to JSON file"""
     filename = _get_timestamp_filename(filename, "json")
 
@@ -38,7 +38,7 @@ def export_to_json(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
     return filename
 
 
-def export_to_excel(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
+def _export_to_excel(jobs_data: List[Dict], filename="jobstreedt_jobs") -> str:
     """Export jobs data to Excel file"""
     filename = _get_timestamp_filename(filename, "xlsx")
 
@@ -53,11 +53,11 @@ def export_to(types: str, jobs_data: List[Dict], filename="jobstreet_jobs") -> s
 
     match types.lower():
         case "json":
-            return export_to_json(jobs_data, filename)
+            return _export_to_json(jobs_data, filename)
         case "csv":
-            return export_to_csv(jobs_data, filename)
+            return _export_to_csv(jobs_data, filename)
         case "excel":
-            return export_to_excel(jobs_data, filename)
+            return _export_to_excel(jobs_data, filename)
         case _:
             print("No types selected, default to json")
-            return export_to_json(jobs_data, filename)
+            return _export_to_json(jobs_data, filename)
