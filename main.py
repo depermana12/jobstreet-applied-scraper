@@ -25,8 +25,8 @@ def main():
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:
-        scraper.driver.quit()
-        print("Driver closed.")
+        scraper.close_browser()
+        print("Browser closed.")
 
 
 if __name__ == "__main__":

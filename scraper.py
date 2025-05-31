@@ -158,6 +158,24 @@ class JobStreetScraper:
 
         return sorted(elements, key=get_index)
 
+    def _has_job_cards(self):
+        """Check if it's on applied jobs page by looking for job cards"""
+        try:
+            if "applied-jobs" not in self.driver.current_url.lower():
+                print("URL does not contain 'applied-jobs'")
+                return False
+
+            wait = WebDriverWait(self.driver, self.SHORT_WAIT)
+            wait.until(
+                lambda d: d.find_element(
+                    By.CSS_SELECTOR, "[data-automation^='job-item-']"
+                )
+            )
+            return True
+        except TimeoutException:
+            print("Not on job applied jobs page, job cards not found")
+            return False
+
     def _close_drawer(self):
         """Close the job details drawer"""
         close_btn = self._find_element(
