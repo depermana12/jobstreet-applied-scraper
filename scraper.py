@@ -24,6 +24,46 @@ class JobStreetScraper:
         self.SHORT_WAIT = configurations["short_wait"]
         self.jobs_data = []
 
+    def _click_element(self, element):
+        """Click an element with scroll into view and fallback to JavaScript click"""
+        try:
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
+                element,
+            )
+            WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                EC.element_to_be_clickable(element)
+            )
+            element.click()
+            time.sleep(0.5)  # wait for any potential animations
+            return True
+        except (ElementClickInterceptedException, ElementNotInteractableException):
+            print("Element not clickable, javaScript click fallback")
+            try:
+                self.driver.execute_script("arguments[0].click();", element)
+                time.sleep(0.5)  # wait for any potential animations
+                return True
+            except Exception as e:
+                print(f"Oh no JavaScript click also failed: {e}")
+                return False
+        except (StaleElementReferenceException, WebDriverException) as e:
+            print(f"Error clicking element: {e}")
+            return False
+
+    def _find_element(self, by, value, timeout=None):
+        """Find an element wait for it to be located with optional timeout"""
+        timeout = timeout or self.SHORT_WAIT
+        try:
+            return WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((by, value))
+            )
+        except TimeoutException:
+            print(f"Element not found: {value}")
+            return None
+        except WebDriverException as e:
+            print(f"WebDriver exception while finding element: {e}")
+            return None
+
     def _login_and_navigate(self):
         """Navigate to applied jobs page and handle login"""
         try:
@@ -158,7 +198,7 @@ class JobStreetScraper:
 
         return sorted(elements, key=get_index)
 
-    def _has_job_cards(self):
+    def _is_on_applied_jobs_page(self):
         """Check if it's on applied jobs page by looking for job cards"""
         try:
             if "applied-jobs" not in self.driver.current_url.lower():
@@ -201,6 +241,178 @@ class JobStreetScraper:
             print("Timeout while waiting for job card header or drawer")
             return None
 
+    def _extract_job_info_from_drawer(self, drawer):
+        """Extract job information from the opened drawer"""
+        results = {
+            "job_title": "N/A",
+            "company_name": "N/A",
+            "job_location": "N/A",
+            "job_salary": "N/A",
+            "job_url": "N/A",
+        }
+
+        try:
+            info_holder = WebDriverWait(drawer, self.LONG_WAIT).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, ".//span[contains(text(), 'Lamaran untuk')]")
+                )
+            )
+            info_title = info_holder.find_element(
+                By.XPATH, "./following-sibling::h3[1]"
+            )
+            info_company = info_title.find_element(
+                By.XPATH, "./following-sibling::span[1]"
+            )
+            info_location = info_company.find_element(
+                By.XPATH, "./following-sibling::span[1]"
+            )
+
+            # get the location of salary which is can exist or not
+            try:
+                info_salary = info_location.find_element(
+                    By.XPATH, "./following-sibling::span[1]"
+                )
+                salary_text = info_salary.text.strip()
+                has_salary = "per month" in salary_text.lower()
+
+            except NoSuchElementException:
+                info_salary = None
+                salary_text = "N/A"
+                has_salary = False
+
+            # if the info_salary exists, info_url is the next sibling, otherwise
+            # info_url is the next sibling of info_location
+            try:
+                if info_salary and has_salary:
+                    info_url = info_salary.find_element(
+                        By.XPATH, "./following-sibling::span[1]/a"
+                    )
+                else:
+                    info_url = info_location.find_element(
+                        By.XPATH, "./following-sibling::span[1]/a"
+                    )
+                url_text = info_url.get_attribute("href").strip().split("?")[0]
+            except NoSuchElementException:
+                url_text = "N/A"
+
+            results.update(
+                {
+                    "job_title": info_title.text.strip(),
+                    "company_name": info_company.text.strip(),
+                    "job_location": info_location.text.strip(),
+                    "job_salary": salary_text.replace("–", "-"),
+                    "job_url": url_text,
+                }
+            )
+        except (NoSuchElementException, TimeoutException, WebDriverException) as e:
+            print(f"Error extracting job info from drawer: {e}")
+        return results
+
+    def _extract_status_from_drawer(self, drawer):
+        """Extract application status from the opened drawer"""
+        application_status = []
+        is_expired = False
+
+        try:
+            status_holder = WebDriverWait(drawer, self.LONG_WAIT).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, ".//span[contains(text(), 'Status lamaran')]")
+                )
+            )
+            wrapper = status_holder.find_element(
+                By.XPATH, "./following-sibling::div[1]"
+            )
+            status_wrapper = wrapper.find_element(By.XPATH, ".//div/div/div/div[2]/div")
+
+            try:
+                status_elements = status_wrapper.find_elements(By.TAG_NAME, "span")[:2]
+                if len(status_elements) >= 2:
+                    status_text = status_elements[0].text.strip()
+                    status_updated = status_elements[1].text.strip().split("\n")[0]
+                    application_status.append(
+                        {
+                            "status": status_text,
+                            "updated_at": status_updated,
+                        }
+                    )
+                else:
+                    print("Status elements are less than 2, skipping...")
+            except NoSuchElementException:
+                print("Missing status data in span, skipping...")
+
+            try:
+                wrapper.find_element(
+                    By.XPATH,
+                    ".//following-sibling::div//span[contains(text(), 'Lowongan kerja ini telah kedaluwarsa')]",
+                )
+                is_expired = True
+
+            except NoSuchElementException:
+                is_expired = False
+
+        except (NoSuchElementException, TimeoutException, WebDriverException) as e:
+            print(f"Error extracting application status from drawer: {e}")
+
+        return {
+            "application_status": application_status,
+            "is_expired": is_expired,
+        }
+
+    def _extract_docs_name_from_drawer(self, drawer):
+        """Extract resume and cover letter names from the opened drawer"""
+        results = {
+            "resume": "N/A",
+            "cover_letter": "N/A",
+        }
+
+        try:
+            cv_element = WebDriverWait(drawer, self.SHORT_WAIT).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "span[data-automation='job-item-resume']")
+                )
+            )
+            cv_text = cv_element.text.strip()
+        except (TimeoutException, WebDriverException):
+            print("Resume element not found or timed out")
+            cv_text = "N/A"
+        try:
+            cl_element = WebDriverWait(drawer, self.SHORT_WAIT).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "span[data-automation='job-item-cover-letter']")
+                )
+            )
+            cl_text = cl_element.text.strip()
+        except (TimeoutException, WebDriverException):
+            print("Cover letter element not found or timed out")
+            cl_text = "N/A"
+
+        results.update({"resume": cv_text, "cover_letter": cl_text})
+        return results
+
+    def _extract_stats_from_drawer(self, drawer):
+        """Extract total applicants from the opened drawer"""
+        try:
+            applicants_raw = (
+                WebDriverWait(drawer, self.SHORT_WAIT)
+                .until(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            "//span[contains(text(), 'kandidat melamar untuk posisi ini')]",
+                        )
+                    )
+                )
+                .text
+            )
+            # regex to extract the number of applicants
+            # it will match the first number in the string
+            match = re.search(r"^(\d+)", applicants_raw)
+            return int(match.group(1)) if match else None
+
+        except (TimeoutException, WebDriverException):
+            print("Applicants element not found or timed out")
+            return None
+
     def _close_drawer(self):
         """Close the job details drawer"""
         close_btn = self._find_element(
@@ -210,93 +422,6 @@ class JobStreetScraper:
             time.sleep(1)  # wait for drawer to close, do not remove this
             return True
         return False
-
-    def _click_element(self, element):
-        """Click an element with scroll into view and fallback to JavaScript click"""
-        try:
-            self.driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
-                element,
-            )
-            WebDriverWait(self.driver, self.SHORT_WAIT).until(
-                EC.element_to_be_clickable(element)
-            )
-            element.click()
-            time.sleep(0.5)  # wait for any potential animations
-            return True
-        except (ElementClickInterceptedException, ElementNotInteractableException):
-            print("Element not clickable, javaScript click fallback")
-            try:
-                self.driver.execute_script("arguments[0].click();", element)
-                time.sleep(0.5)  # wait for any potential animations
-                return True
-            except Exception as e:
-                print(f"Oh no JavaScript click also failed: {e}")
-                return False
-        except (StaleElementReferenceException, WebDriverException) as e:
-            print(f"Error clicking element: {e}")
-            return False
-
-    def _find_element(self, by, value, timeout=None):
-        """Find an element wait for it to be located with optional timeout"""
-        timeout = timeout or self.SHORT_WAIT
-        try:
-            return WebDriverWait(self.driver, timeout).until(
-                EC.presence_of_element_located((by, value))
-            )
-        except TimeoutException:
-            print(f"Element not found: {value}")
-            return None
-        except WebDriverException as e:
-            print(f"WebDriver exception while finding element: {e}")
-            return None
-
-    def _go_to_next_page(self):
-        """Navigate to the next page of applied jobs"""
-        try:
-            next_btn = self._find_element(
-                By.CSS_SELECTOR, "[aria-label='Next page']", self.SHORT_WAIT
-            )
-            if not next_btn:
-                print("Next page button not found")
-                return False
-
-            current_url = self.driver.current_url
-
-            if not self._click_element(next_btn):
-                print("Failed to click next page button")
-                return False
-
-            try:
-                WebDriverWait(self.driver, self.SHORT_WAIT).until(
-                    lambda d: d.current_url != current_url
-                )
-            except TimeoutException:
-                print("Redirecting error: page url did not change after clicking next")
-                return False
-
-            if not self._has_job_cards():
-                print("No job cards found on the next page")
-                return False
-
-            time.sleep(2)  # wait for the page to load
-            self.driver.execute_script("window.scrollTo(0, 0);")
-
-            print("Successfully navigated to next page")
-            return True
-
-        except WebDriverException as e:
-            print(f"Failed to go to next page: {e}")
-            return False
-
-    def close_browser(self):
-        """Close the browser"""
-        if hasattr(self, "driver") and self.driver:
-            try:
-                self.driver.quit()
-                print("Browser closed")
-            except WebDriverException as e:
-                print(f"Error closing the browser: {e}")
 
     def scrape_all_jobs(self, max_pages=None):
         """Main scraping method"""
@@ -524,3 +649,50 @@ class JobStreetScraper:
         finally:
             print(f"Scraping completed. Total jobs collected: {total_jobs}")
             return self.jobs_data
+
+    def _go_to_next_page(self):
+        """Navigate to the next page of applied jobs"""
+        try:
+            next_btn = self._find_element(
+                By.CSS_SELECTOR, "[aria-label='Next page']", self.SHORT_WAIT
+            )
+            if not next_btn:
+                print("Next page button not found")
+                return False
+
+            current_url = self.driver.current_url
+
+            if not self._click_element(next_btn):
+                print("Failed to click next page button")
+                return False
+
+            try:
+                WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                    lambda d: d.current_url != current_url
+                )
+            except TimeoutException:
+                print("Redirecting error: page url did not change after clicking next")
+                return False
+
+            if not self._is_on_applied_jobs_page():
+                print("No job cards found on the next page")
+                return False
+
+            time.sleep(2)  # wait for the page to load
+            self.driver.execute_script("window.scrollTo(0, 0);")
+
+            print("Successfully navigated to next page")
+            return True
+
+        except WebDriverException as e:
+            print(f"Failed to go to next page: {e}")
+            return False
+
+    def close_browser(self):
+        """Close the browser"""
+        if hasattr(self, "driver") and self.driver:
+            try:
+                self.driver.quit()
+                print("Browser closed")
+            except WebDriverException as e:
+                print(f"Error closing the browser: {e}")
