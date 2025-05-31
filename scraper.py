@@ -11,8 +11,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
 from configs import init_driver, configurations
 from selenium.webdriver.common.by import By
+from configs import init_logging
+import logging
 import time
 import re
+
+init_logging()
 
 
 class JobStreetScraper:
@@ -22,6 +26,7 @@ class JobStreetScraper:
         self.base_url = configurations["base_url"]
         self.LONG_WAIT = configurations["default_wait"]
         self.SHORT_WAIT = configurations["short_wait"]
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.jobs_data = []
 
     def _click_element(self, element):
@@ -38,16 +43,16 @@ class JobStreetScraper:
             time.sleep(0.5)  # wait for any potential animations
             return True
         except (ElementClickInterceptedException, ElementNotInteractableException):
-            print("Element not clickable, javaScript click fallback")
+            self.logger.warning("Element not clickable, javaScript click fallback")
             try:
                 self.driver.execute_script("arguments[0].click();", element)
                 time.sleep(0.5)  # wait for any potential animations
                 return True
             except Exception as e:
-                print(f"Oh no JavaScript click also failed: {e}")
+                self.logger.error(f"Oh no JavaScript click also failed: {e}")
                 return False
         except (StaleElementReferenceException, WebDriverException) as e:
-            print(f"Error clicking element: {e}")
+            self.logger.error(f"Error clicking element: {e}")
             return False
 
     def _find_element(self, by, value, timeout=None):
@@ -58,10 +63,10 @@ class JobStreetScraper:
                 EC.presence_of_element_located((by, value))
             )
         except TimeoutException:
-            print(f"Element not found: {value}")
+            self.logger.warning(f"Element not found: {value}")
             return None
         except WebDriverException as e:
-            print(f"WebDriver exception while finding element: {e}")
+            self.logger.error(f"WebDriver exception while finding element: {e}")
             return None
 
     def _login_and_navigate(self):
@@ -69,7 +74,7 @@ class JobStreetScraper:
         try:
             self.driver.get(self.base_url)
         except WebDriverException as e:
-            print(f"Error navigating to {self.base_url}: {e}")
+            self.logger.error(f"Error navigating to {self.base_url}: {e}")
             return False
 
         wait = WebDriverWait(self.driver, self.LONG_WAIT)
@@ -84,10 +89,10 @@ class JobStreetScraper:
             email_input.send_keys(Keys.ENTER)
 
         except (TimeoutException, WebDriverException) as e:
-            print(f"Error during email input : {e}")
+            self.logger.error(f"Error during email input : {e}")
 
             if "applied-jobs" in self.driver.current_url.lower():
-                print("Already logged in, skipping OTP")
+                self.logger.info("Already logged in, skipping OTP")
                 return True
             return False
 
@@ -105,18 +110,21 @@ class JobStreetScraper:
                             By.CSS_SELECTOR, "[data-automation^='job-item-']"
                         )
                     )
-                    print("Logged in from web page")
+                    self.logger.info("Logged in from web page")
                     return True
                 except TimeoutException:
-                    print("Timeout while waiting for job cards to load")
+                    self.logger.warning("Timeout while waiting for job cards to load")
                     return False
 
             try:
+                self.logger.info("Please enter the OTP sent to your email")
                 print("Please enter the OTP sent to your email")
                 otp = input("Enter the OTP: ").strip()
 
                 if len(otp) != 6 or not otp.isdigit():
-                    print("Invalid OTP format. Please enter a 6-digit number.")
+                    self.logger.warning(
+                        "Invalid OTP format. Please enter a 6-digit number."
+                    )
                     continue
 
                 otp_field = wait.until(
@@ -140,7 +148,7 @@ class JobStreetScraper:
                         By.CSS_SELECTOR, "[aria-live='polite']"
                     )
                     if "invalid code" in error_alert.text.strip().lower():
-                        print("Invalid OTP, try again...")
+                        self.logger.warning("Invalid OTP, try again...")
                         continue  # retry otp
                 except NoSuchElementException:
                     pass
@@ -153,15 +161,19 @@ class JobStreetScraper:
                         )
                     )
 
-                    print("Successfully logged in and navigated to applied jobs page")
+                    self.logger.info(
+                        "Successfully logged in and navigated to applied jobs page"
+                    )
                     return True
 
                 except TimeoutException:
-                    print("Timeout while waiting for job cards to load after OTP")
+                    self.logger.warning(
+                        "Timeout while waiting for job cards to load after OTP"
+                    )
                     return False
 
             except (TimeoutException, WebDriverException) as e:
-                print(f"Exception during OTP input or field loading: {e}")
+                self.logger.error(f"Exception during OTP input or field loading: {e}")
                 return False
 
     def _find_job_cards(self):
@@ -173,16 +185,17 @@ class JobStreetScraper:
                 )
             )
             if elements:
-                print(f"Found {len(elements)} job cards")
+                self.logger.info(f"Found {len(elements)} job cards")
                 return self._sort_job_cards(elements)
             else:
+                self.logger.warning("No job cards found on this page")
                 return []
 
         except TimeoutException:
-            print("No job cards found on this page")
+            self.logger.warning("No job cards found on this page")
             return []
         except WebDriverException as e:
-            print(f"WebDriver exception while finding job cards: {e}")
+            self.logger.error(f"WebDriver exception while finding job cards: {e}")
             return []
 
     def _sort_job_cards(self, elements):
@@ -193,7 +206,7 @@ class JobStreetScraper:
                 attr = element.get_attribute("data-automation")
                 return int(attr.split("-")[-1])
             except (ValueError, AttributeError, StaleElementReferenceException) as e:
-                print(f"Error getting index from element: {e}")
+                self.logger.error(f"Error getting index from element: {e}")
             return 0
 
         return sorted(elements, key=get_index)
@@ -202,7 +215,7 @@ class JobStreetScraper:
         """Check if it's on applied jobs page by looking for job cards"""
         try:
             if "applied-jobs" not in self.driver.current_url.lower():
-                print("URL does not contain 'applied-jobs'")
+                self.logger.warning("URL does not contain 'applied-jobs'")
                 return False
 
             wait = WebDriverWait(self.driver, self.SHORT_WAIT)
@@ -211,9 +224,10 @@ class JobStreetScraper:
                     By.CSS_SELECTOR, "[data-automation^='job-item-']"
                 )
             )
+            self.logger.info("Confirmed on applied jobs page, job cards found")
             return True
         except TimeoutException:
-            print("Not on job applied jobs page, job cards not found")
+            self.logger.warning("Not on job applied jobs page, job cards not found")
             return False
 
     def _open_drawer(self, job_card):
@@ -224,7 +238,7 @@ class JobStreetScraper:
             )
 
             if not self._click_element(header_card):
-                print("Failed to click job card header")
+                self.logger.error("Failed to click job card header")
                 return False
 
             drawer = WebDriverWait(self.driver, self.SHORT_WAIT).until(
@@ -233,11 +247,11 @@ class JobStreetScraper:
             if drawer:
                 return drawer
             else:
-                print("Job card drawer not found after clicking header")
+                self.logger.warning("Job card drawer not found after clicking header")
                 return None
 
         except TimeoutException:
-            print("Timeout while waiting for job card header or drawer")
+            self.logger.error("Timeout while waiting for job card header or drawer")
             return None
 
     def _extract_job_info_from_drawer(self, drawer):
@@ -299,6 +313,7 @@ class JobStreetScraper:
                     )
                 url_text = info_url.get_attribute("href").strip().split("?")[0]
             except (NoSuchElementException, AttributeError):
+                self.logger.info("Job URL not found or not available")
                 url_text = "N/A"
 
             results.update(
@@ -311,7 +326,7 @@ class JobStreetScraper:
                 }
             )
         except (NoSuchElementException, TimeoutException, WebDriverException) as e:
-            print(f"Error extracting job info from drawer: {e}")
+            self.logger.error(f"Error extracting job info from drawer: {e}")
         return results
 
     def _extract_status_from_drawer(self, drawer):
@@ -350,7 +365,7 @@ class JobStreetScraper:
                     # print("Missing status data in span, skipping...")
                     pass
             if not application_status:
-                print("No valid status data found in any blocks")
+                self.logger.warning("No valid status data found in any blocks")
             try:
                 wrapper.find_element(
                     By.XPATH,
@@ -362,7 +377,7 @@ class JobStreetScraper:
                 is_expired = False
 
         except (NoSuchElementException, TimeoutException, WebDriverException) as e:
-            print(f"Error extracting application status from drawer: {e}")
+            self.logger.error(f"Error extracting application status from drawer: {e}")
 
         return {
             "application_status": application_status,
@@ -388,7 +403,7 @@ class JobStreetScraper:
             )
             cv_text = clean_text(cv_element.text)
         except (TimeoutException, WebDriverException):
-            print("Resume element not found or timed out")
+            self.logger.error("Resume element not found or timed out")
             cv_text = "N/A"
         try:
             cl_element = WebDriverWait(drawer, self.SHORT_WAIT).until(
@@ -398,7 +413,7 @@ class JobStreetScraper:
             )
             cl_text = clean_text(cl_element.text)
         except (TimeoutException, WebDriverException):
-            print("Cover letter element not found or timed out")
+            self.logger.error("Cover letter element not found or timed out")
             cl_text = "N/A"
 
         results.update({"resume": cv_text, "cover_letter": cl_text})
@@ -425,24 +440,29 @@ class JobStreetScraper:
             return int(match.group(1)) if match else None
 
         except (TimeoutException, WebDriverException):
-            print("Applicants element not found or timed out")
+            self.logger.error("Applicants element not found or timed out")
             return None
 
     def _close_drawer(self):
         """Close the job details drawer"""
-        close_btn = self._find_element(
-            By.CSS_SELECTOR, "[aria-label='Close']", timeout=self.SHORT_WAIT
-        )
-        if close_btn and self._click_element(close_btn):
-            time.sleep(1)  # wait for drawer to close, do not remove this
-            return True
-        return False
+        try:
+            close_btn = self._find_element(
+                By.CSS_SELECTOR, "[aria-label='Close']", timeout=self.SHORT_WAIT
+            )
+            if close_btn and self._click_element(close_btn):
+                time.sleep(0.5)  # wait for drawer to close, do not remove this
+                return True
+            self.logger.warning("Failed to close job drawer")
+            return False
+        except (TimeoutException, WebDriverException) as e:
+            self.logger.error(f"Error closing job drawer: {e}")
+            return False
 
     def scrape_all_jobs(self, max_pages=None):
         """Main scraping method"""
 
         self._login_and_navigate()
-        print("Starting job scraping")
+        self.logger.info("Starting job scraping")
 
         page_num = 0
         total_jobs = 0
@@ -450,15 +470,15 @@ class JobStreetScraper:
         try:
             while True:
                 page_num += 1
-                print(f"\nProcessing page {page_num}")
+                self.logger.info(f"Processing page {page_num}")
 
                 job_cards = self._find_job_cards()
                 if not job_cards:
-                    print("No more job cards found")
+                    self.logger.warning("No more job cards found")
                     break
 
                 for i, card in enumerate(job_cards, 1):
-                    print(f"Processing job {i}/{len(job_cards)}")
+                    self.logger.info(f"Processing job {i}/{len(job_cards)}")
 
                     job_info = {
                         "id": total_jobs + 1,
@@ -468,7 +488,9 @@ class JobStreetScraper:
                     try:
                         drawer = self._open_drawer(card)
                         if not drawer:
-                            print("Failed to open job drawer, skipping...")
+                            self.logger.warning(
+                                "Failed to open job drawer, skipping..."
+                            )
                             continue
 
                         info = self._extract_job_info_from_drawer(drawer)
@@ -499,24 +521,24 @@ class JobStreetScraper:
                         self._close_drawer()
 
                     except Exception as e:
-                        print(f"Error processing job card {i}: {e}")
+                        self.logger.error(f"Error processing job card {i}: {e}")
                         continue
 
                     self.jobs_data.append(job_info)
                     total_jobs += 1
 
-                print(f"Completed page {page_num}, total jobs: {total_jobs}")
+                self.logger.info(f"Completed page {page_num}, total jobs: {total_jobs}")
 
                 if max_pages and page_num >= max_pages:
-                    print(f"Reached maximum pages: {max_pages}")
+                    self.logger.info(f"Reached maximum pages: {max_pages}")
                     break
 
                 if not self._go_to_next_page():
-                    print("No more pages available")
+                    self.logger.warning("No more pages available")
                     break
 
         finally:
-            print(f"Scraping completed. Total jobs collected: {total_jobs}")
+            self.logger.info(f"Scraping completed. Total jobs collected: {total_jobs}")
             return self.jobs_data
 
     def _go_to_next_page(self):
@@ -526,13 +548,13 @@ class JobStreetScraper:
                 By.CSS_SELECTOR, "[aria-label='Next page']", self.SHORT_WAIT
             )
             if not next_btn:
-                print("Next page button not found")
+                self.logger.warning("Next page button not found")
                 return False
 
             current_url = self.driver.current_url
 
             if not self._click_element(next_btn):
-                print("Failed to click next page button")
+                self.logger.error("Failed to click next page button")
                 return False
 
             try:
@@ -540,21 +562,23 @@ class JobStreetScraper:
                     lambda d: d.current_url != current_url
                 )
             except TimeoutException:
-                print("Redirecting error: page url did not change after clicking next")
+                self.logger.error(
+                    "Redirecting error: page url did not change after clicking next"
+                )
                 return False
 
             if not self._is_on_applied_jobs_page():
-                print("No job cards found on the next page")
+                self.logger.warning("No job cards found on the next page")
                 return False
 
             time.sleep(2)  # wait for the page to load
             self.driver.execute_script("window.scrollTo(0, 0);")
 
-            print("Successfully navigated to next page")
+            self.logger.info("Successfully navigated to next page")
             return True
 
         except WebDriverException as e:
-            print(f"Failed to go to next page: {e}")
+            self.logger.error(f"Failed to go to next page: {e}")
             return False
 
     def close_browser(self):
@@ -562,6 +586,5 @@ class JobStreetScraper:
         if hasattr(self, "driver") and self.driver:
             try:
                 self.driver.quit()
-                print("Browser closed")
             except WebDriverException as e:
-                print(f"Error closing the browser: {e}")
+                self.logger.error(f"Error closing the browser: {e}")
