@@ -213,7 +213,7 @@ class JobStreetScraper:
             return False
 
     def _find_element(self, by, value, timeout=None):
-        """Find an element with optional timeout"""
+        """Find an element wait for it to be located with optional timeout"""
         timeout = timeout or self.SHORT_WAIT
         try:
             return WebDriverWait(self.driver, timeout).until(
@@ -227,30 +227,40 @@ class JobStreetScraper:
             return None
 
     def _go_to_next_page(self):
-        """Navigate to the next page if available"""
+        """Navigate to the next page of applied jobs"""
         try:
-            wait = WebDriverWait(self.driver, 10)
-            next_btn = self.driver.find_element(By.CSS_SELECTOR, "a[aria-label='Next']")
+            next_btn = self._find_element(
+                By.CSS_SELECTOR, "[aria-label='Next page']", self.SHORT_WAIT
+            )
+            if not next_btn:
+                print("Next page button not found")
+                return False
+
             current_url = self.driver.current_url
-            self.driver.execute_script(
-                "arguments[0].scrollIntoView({block: 'center', inline: 'center'});",
-                next_btn,
-            )
-            wait.until(EC.element_to_be_clickable(next_btn))
-            self.driver.execute_script("arguments[0].click();", next_btn)
-            wait.until(lambda d: d.current_url != current_url)
-            wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "[data-automation^='job-item-']")
+
+            if not self._click_element(next_btn):
+                print("Failed to click next page button")
+                return False
+
+            try:
+                WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                    lambda d: d.current_url != current_url
                 )
-            )
-            time.sleep(3)
+            except TimeoutException:
+                print("Redirecting error: page url did not change after clicking next")
+                return False
+
+            if not self._has_job_cards():
+                print("No job cards found on the next page")
+                return False
+
+            time.sleep(2)  # wait for the page to load
             self.driver.execute_script("window.scrollTo(0, 0);")
 
             print("Successfully navigated to next page")
             return True
 
-        except Exception as e:
+        except WebDriverException as e:
             print(f"Failed to go to next page: {e}")
             return False
 
