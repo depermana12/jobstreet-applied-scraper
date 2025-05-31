@@ -176,6 +176,31 @@ class JobStreetScraper:
             print("Not on job applied jobs page, job cards not found")
             return False
 
+    def _open_drawer(self, job_card):
+        """Open drawer for each job card by clicking the header"""
+        try:
+            header_card = job_card.find_element(
+                By.CSS_SELECTOR, "h4 span[role='button']"
+            )
+
+            if not self._click_element(header_card):
+                print("Failed to click job card header")
+                return False
+
+            drawer = WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[role='dialog']"))
+            )
+            if drawer:
+                print("Job card drawer opened successfully")
+                return drawer
+            else:
+                print("Job card drawer not found after clicking header")
+                return None
+
+        except TimeoutException:
+            print("Timeout while waiting for job card header or drawer")
+            return None
+
     def _close_drawer(self):
         """Close the job details drawer"""
         close_btn = self._find_element(
