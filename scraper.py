@@ -283,7 +283,7 @@ class JobStreetScraper:
             # if the info_salary exists, info_url is the next sibling, otherwise
             # info_url is the next sibling of info_location
             try:
-                if info_salary and has_salary:
+                if has_salary:
                     info_url = info_salary.find_element(
                         By.XPATH, "./following-sibling::span[1]/a"
                     )
@@ -381,7 +381,7 @@ class JobStreetScraper:
                     (By.CSS_SELECTOR, "span[data-automation='job-item-cover-letter']")
                 )
             )
-            cl_text = cl_element.text.strip()
+            cl_text = cl_element.text.replace("\u2060", "").strip()
         except (TimeoutException, WebDriverException):
             print("Cover letter element not found or timed out")
             cl_text = "N/A"
@@ -451,186 +451,40 @@ class JobStreetScraper:
                     }
 
                     try:
-                        header_card = card.find_element(
-                            By.CSS_SELECTOR, "h4 span[role='button']"
-                        )
-                        self.driver.execute_script(
-                            "arguments[0].scrollIntoView(true);", header_card
-                        )
+                        drawer = self._open_drawer(card)
+                        if not drawer:
+                            print("Failed to open job drawer, skipping...")
+                            continue
 
-                        wait = WebDriverWait(self.driver, 10)
-                        wait.until(EC.element_to_be_clickable(header_card))
-                        header_card.click()
+                        info = self._extract_job_info_from_drawer(drawer)
+                        status = self._extract_status_from_drawer(drawer)
+                        docs = self._extract_docs_name_from_drawer(drawer)
+                        applicants = self._extract_stats_from_drawer(drawer)
 
-                        drawer = wait.until(
-                            EC.presence_of_element_located(
-                                (By.CSS_SELECTOR, "[role='dialog']")
-                            )
-                        )
-
-                        # ------- INFO SECTION -------
-                        try:
-                            info_holder = WebDriverWait(drawer, 10).until(
-                                EC.presence_of_element_located(
-                                    (
-                                        By.XPATH,
-                                        ".//span[contains(text(), 'Lamaran untuk')]",
-                                    )
-                                )
-                            )
-                            info_title = info_holder.find_element(
-                                By.XPATH, "./following-sibling::h3[1]"
-                            )
-                            info_company = info_title.find_element(
-                                By.XPATH, "./following-sibling::span[1]"
-                            )
-                            info_location = info_company.find_element(
-                                By.XPATH, "./following-sibling::span[1]"
-                            )
-
-                            try:
-                                info_salary = info_location.find_element(
-                                    By.XPATH, "./following-sibling::span[1]"
-                                )
-                                salary_text = info_salary.text.strip()
-                                has_salary = "per month" in salary_text.lower()
-
-                            except NoSuchElementException:
-                                info_salary = None
-                                salary_text = "N/A"
-                                has_salary = False
-
-                            try:
-                                if has_salary:
-                                    info_url = info_salary.find_element(
-                                        By.XPATH, "./following-sibling::span[1]/a"
-                                    )
-                                else:
-                                    info_url = info_location.find_element(
-                                        By.XPATH, "./following-sibling::span[1]/a"
-                                    )
-                                url_text = (
-                                    info_url.get_attribute("href").strip().split("?")[0]
-                                )
-                            except NoSuchElementException:
-                                url_text = "N/A"
-
-                        except Exception as e:
-                            print(f"Error extracting job info section: {e}")
-                            continue  # skip this card if basic info fails
-
-                        # ------- STATUS SECTION -------
-                        try:
-                            details_elem = wait.until(
-                                EC.presence_of_element_located(
-                                    (
-                                        By.XPATH,
-                                        ".//span[contains(text(), 'Status lamaran')]",
-                                    )
-                                )
-                            )
-                            status_wrapper = details_elem.find_element(
-                                By.XPATH, "./following-sibling::div[1]"
-                            )
-                            status_blocks = status_wrapper.find_element(
-                                By.XPATH, ".//div/div/div/div[2]/div"
-                            )
-                            try:
-                                span_elements = status_blocks.find_elements(
-                                    By.TAG_NAME, "span"
-                                )[:2]
-
-                                application_status = []
-
-                                if len(span_elements) >= 2:
-                                    status_text = span_elements[0].text.strip()
-                                    status_updated = (
-                                        span_elements[1].text.strip().split("\n")[0]
-                                    )
-                                    application_status.append(
-                                        {
-                                            "status": status_text,
-                                            "updated_at": status_updated,
-                                        }
-                                    )
-                                else:
-                                    print("Missing status data in span, skipping...")
-
-                            except NoSuchElementException:
-                                print("Missing status data in span, skipping...")
-
-                            try:
-                                status_wrapper.find_element(
-                                    By.XPATH,
-                                    ".//following-sibling::div//span[contains(text(), 'Lowongan kerja ini telah kedaluwarsa')]",
-                                )
-                                is_expired = True
-                            except NoSuchElementException:
-                                is_expired = False
-
-                            cv_elem = WebDriverWait(drawer, 3).until(
-                                EC.presence_of_element_located(
-                                    (
-                                        By.CSS_SELECTOR,
-                                        "span[data-automation='job-item-resume']",
-                                    )
-                                )
-                            )
-                            cv_text = cv_elem.get_attribute("textContent").strip()
-
-                            cl_elem = WebDriverWait(drawer, 3).until(
-                                EC.presence_of_element_located(
-                                    (
-                                        By.CSS_SELECTOR,
-                                        "span[data-automation='job-item-cover-letter']",
-                                    )
-                                )
-                            )
-                            cl_text = cl_elem.get_attribute("textContent").strip()
-
-                            applicants_raw = self.driver.find_element(
-                                By.XPATH,
-                                "//span[contains(text(), 'kandidat melamar untuk posisi ini')]",
-                            ).text
-                            match = re.search(r"^(\d+)", applicants_raw)
-                            applicants_text = (
-                                int(match.group(1)) if match else "Not specified"
-                            )
-
-                        except Exception as e:
-                            print(f"Could not find application status section: {e}")
-                            application_status = []
-                            cv_text = "Not specified"
-                            cl_text = "Not specified"
-                            applicants_text = "Not specified"
-
-                        # ------- Assign Data -------
                         job_info.update(
                             {
                                 "data_retrieved_at": time.strftime(
                                     "%d-%m-%Y %H:%M:%S", time.localtime()
                                 ),
-                                "job_title": info_title.text.strip(),
-                                "company_name": info_company.text.strip(),
-                                "job_location": info_location.text.strip(),
-                                "salary_range": salary_text if has_salary else "N/A",
-                                "job_url": url_text,
-                                "resume": cv_text,
-                                "cover_letter": cl_text,
-                                "total_applicants": applicants_text,
-                                "is_expired": is_expired,
-                                "application_status": application_status,
+                                "job_title": info["job_title"],
+                                "company_name": info["company_name"],
+                                "job_location": info["job_location"],
+                                "salary_range": info["job_salary"],
+                                "job_url": info["job_url"],
+                                "resume": docs["resume"],
+                                "cover_letter": docs["cover_letter"],
+                                "total_applicants": (
+                                    applicants if applicants is not None else "N/A"
+                                ),
+                                "is_expired": status["is_expired"],
+                                "application_status": status["application_status"],
                             }
                         )
 
                         self._close_drawer()
 
-                    except (
-                        NoSuchElementException,
-                        StaleElementReferenceException,
-                        TimeoutException,
-                    ) as e:
-                        print(f"Error getting job details: {e}")
+                    except Exception as e:
+                        print(f"Error processing job card {i}: {e}")
                         continue
 
                     self.jobs_data.append(job_info)
