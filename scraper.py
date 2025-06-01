@@ -23,7 +23,7 @@ import re
 class JobStreetScraper:
     def __init__(self, email):
         self.email = email
-        self.driver = init_driver("default")
+        self.driver = None
         self._initialize_driver()
         self.base_url = configurations["base_url"]
         self.LONG_WAIT = configurations["default_wait"]
@@ -32,8 +32,12 @@ class JobStreetScraper:
         self.jobs_data = []
 
     def _initialize_driver(self):
+        console = Console()
         try:
-            self.driver = init_driver("default")
+            self.driver = init_driver("chrome", "Default", headless=True)
+            console.print(
+                f"[bold green]WebDriver {self.driver.name} initialized successfully![/]"
+            )
         except (Exception, WebDriverException) as e:
             self.logger.error(f"Failed to initialize WebDriver: {e}")
             raise
