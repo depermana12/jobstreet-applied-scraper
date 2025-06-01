@@ -12,6 +12,9 @@ from selenium.webdriver.common.keys import Keys
 from configs import init_driver, configurations
 from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
+from rich.console import Console
+from rich.status import Status
+from rich.panel import Panel
 import logging
 import time
 import re
@@ -116,7 +119,7 @@ class JobStreetScraper:
             )
             email_input.clear()
             email_input.send_keys(self.email)
-            time.sleep(0.5)
+            time.sleep(0.3)
             email_input.send_keys(Keys.ENTER)
 
         except (TimeoutException, WebDriverException) as e:
@@ -132,6 +135,7 @@ class JobStreetScraper:
     def _handle_otp(self):
         """Handle OTP input if required"""
         wait = WebDriverWait(self.driver, self.LONG_WAIT)
+        console = Console()
 
         while True:
             if "applied-jobs" in self.driver.current_url.lower():
@@ -149,12 +153,16 @@ class JobStreetScraper:
 
             try:
                 self.logger.info("Please enter the OTP sent to your email")
-                print("Please enter the OTP sent to your email")
-                otp = input("Enter the OTP: ").strip()
+                otp = console.input(
+                    "[bold yellow]Enter the OTP sent to your email: [/]"
+                ).strip()
 
                 if len(otp) != 6 or not otp.isdigit():
                     self.logger.warning(
                         "Invalid OTP format. Please enter a 6-digit number."
+                    )
+                    console.print(
+                        "[bold red]Invalid OTP format. Please enter a 6-digit number.[/]"
                     )
                     continue
 
@@ -180,6 +188,7 @@ class JobStreetScraper:
                     )
                     if "invalid code" in error_alert.text.strip().lower():
                         self.logger.warning("Invalid OTP, try again...")
+                        console.print("[bold red]Invalid OTP, please try again.[/]")
                         continue  # retry otp
                 except NoSuchElementException:
                     pass
@@ -583,6 +592,10 @@ class JobStreetScraper:
     def scrape_all_jobs(self, max_pages=None):
         """Main scraping method"""
 
+        console = Console()
+        start_time = time.time()
+        console.print("[bold cyan]Starting JobStreet scraping[/]")
+
         self._login_and_navigate()
         self.logger.info("Starting job scraping")
 
@@ -600,74 +613,88 @@ class JobStreetScraper:
                     break
 
                 for i, card in enumerate(job_cards, 1):
-                    self.logger.info(f"Processing job {i}/{len(job_cards)}")
+                    job_start = time.time()
 
-                    job_info = {
-                        "id": total_jobs + 1,
-                        "job_platform": "JobStreet",
-                    }
+                    with Status(
+                        f"[yellow]Processing job {i}/{len(job_cards)} on page {page_num}...[/]",
+                        console=console,
+                        spinner="dots",
+                    ):
+                        self.logger.info(f"Processing job {i}/{len(job_cards)}")
 
-                    try:
-                        drawer = self._open_drawer(card)
-                        if not drawer:
-                            self.logger.warning(
-                                "Failed to open job drawer, skipping..."
-                            )
-                            continue
+                        job_info = {
+                            "id": total_jobs + 1,
+                            "job_platform": "JobStreet",
+                        }
 
-                        info = self._extract_job_info_from_drawer(drawer)
-
-                        if info.get("job_url") != "N/A":
-                            original_window = self._open_info_url_in_new_tab(
-                                info["job_url"]
-                            )
-                            if original_window is None:
-                                self.logger.error(
-                                    "Failed to open job URL in new tab, skipping..."
+                        try:
+                            drawer = self._open_drawer(card)
+                            if not drawer:
+                                self.logger.warning(
+                                    "Failed to open job drawer, skipping..."
                                 )
                                 continue
-                            try:
-                                extra_info = self._extract_extra_info_from_new_tab()
-                            finally:
-                                self._close_info_tab(original_window)
 
-                        status = self._extract_status_from_drawer(drawer)
-                        docs = self._extract_docs_name_from_drawer(drawer)
-                        applicants = self._extract_stats_from_drawer(drawer)
+                            info = self._extract_job_info_from_drawer(drawer)
 
-                        job_info.update(
-                            {
-                                "data_retrieved_at": time.strftime(
-                                    "%d-%m-%Y %H:%M:%S", time.localtime()
-                                ),
-                                "job_title": info["job_title"],
-                                "company_name": info["company_name"],
-                                "job_location": info["job_location"],
-                                "job_classification": extra_info["job_classification"],
-                                "job_type": extra_info["job_type"],
-                                "job_posted_date": extra_info["job_posted_date"],
-                                "salary_range": info["job_salary"],
-                                "job_url": info["job_url"],
-                                "resume": docs["resume"],
-                                "cover_letter": docs["cover_letter"],
-                                "total_applicants": (
-                                    applicants if applicants is not None else "N/A"
-                                ),
-                                "is_expired": status["is_expired"],
-                                "application_status": status["application_status"],
-                            }
+                            if info.get("job_url") != "N/A":
+                                original_window = self._open_info_url_in_new_tab(
+                                    info["job_url"]
+                                )
+                                if original_window is None:
+                                    self.logger.error(
+                                        "Failed to open job URL in new tab, skipping..."
+                                    )
+                                    continue
+                                try:
+                                    extra_info = self._extract_extra_info_from_new_tab()
+                                finally:
+                                    self._close_info_tab(original_window)
+
+                            status = self._extract_status_from_drawer(drawer)
+                            docs = self._extract_docs_name_from_drawer(drawer)
+                            applicants = self._extract_stats_from_drawer(drawer)
+
+                            job_info.update(
+                                {
+                                    "data_retrieved_at": time.strftime(
+                                        "%d-%m-%Y %H:%M:%S", time.localtime()
+                                    ),
+                                    "job_title": info["job_title"],
+                                    "company_name": info["company_name"],
+                                    "job_location": info["job_location"],
+                                    "job_classification": extra_info[
+                                        "job_classification"
+                                    ],
+                                    "job_type": extra_info["job_type"],
+                                    "job_posted_date": extra_info["job_posted_date"],
+                                    "salary_range": info["job_salary"],
+                                    "job_url": info["job_url"],
+                                    "resume": docs["resume"],
+                                    "cover_letter": docs["cover_letter"],
+                                    "total_applicants": (
+                                        applicants if applicants is not None else "N/A"
+                                    ),
+                                    "is_expired": status["is_expired"],
+                                    "application_status": status["application_status"],
+                                }
+                            )
+
+                            self._close_drawer()
+
+                        except Exception as e:
+                            self.logger.error(f"Error processing job card {i}: {e}")
+                            continue
+
+                        self.jobs_data.append(job_info)
+                        total_jobs += 1
+                        elapsed = time.time() - job_start
+                        console.print(
+                            f"[green]✔ Finished job {i}/{len(job_cards)} in {elapsed:.2f}s[/]"
                         )
 
-                        self._close_drawer()
-
-                    except Exception as e:
-                        self.logger.error(f"Error processing job card {i}: {e}")
-                        continue
-
-                    self.jobs_data.append(job_info)
-                    total_jobs += 1
-
                 self.logger.info(f"Completed page {page_num}, total jobs: {total_jobs}")
+                console.print(f"[bold green]✔ Completed page {page_num}[/]")
 
                 if max_pages and page_num >= max_pages:
                     self.logger.info(f"Reached maximum pages: {max_pages}")
@@ -678,11 +705,20 @@ class JobStreetScraper:
                     break
 
         finally:
+            total_elapsed = time.time() - start_time
+            console.print(
+                Panel.fit(
+                    f"[bold green]✅ Scraping completed![/]\n[cyan]Total jobs collected: {total_jobs}[/]\n[magenta]Total elapsed time: {total_elapsed:.2f} seconds[/]",
+                    title="[bold]JobStreet Scraper[/]",
+                )
+            )
             self.logger.info(f"Scraping completed. Total jobs collected: {total_jobs}")
             return self.jobs_data
 
     def _go_to_next_page(self):
         """Navigate to the next page of applied jobs"""
+        console = Console()
+
         try:
             next_btn = self._find_element(
                 By.CSS_SELECTOR, "a[aria-label='Next']", self.SHORT_WAIT
@@ -715,6 +751,7 @@ class JobStreetScraper:
             self.driver.execute_script("window.scrollTo(0, 0);")
 
             self.logger.info("Successfully navigated to next page")
+            console.print("[bold green]Navigated to next page[/]")
             return True
 
         except WebDriverException as e:
