@@ -24,11 +24,19 @@ class JobStreetScraper:
     def __init__(self, email):
         self.email = email
         self.driver = init_driver("default")
+        self._initialize_driver()
         self.base_url = configurations["base_url"]
         self.LONG_WAIT = configurations["default_wait"]
         self.SHORT_WAIT = configurations["short_wait"]
         self.logger = logging.getLogger(self.__class__.__name__)
         self.jobs_data = []
+
+    def _initialize_driver(self):
+        try:
+            self.driver = init_driver("default")
+        except (Exception, WebDriverException) as e:
+            self.logger.error(f"Failed to initialize WebDriver: {e}")
+            raise
 
     def _click_element(self, element):
         """Click an element with scroll into view and fallback to JavaScript click"""
@@ -41,13 +49,13 @@ class JobStreetScraper:
                 EC.element_to_be_clickable(element)
             )
             element.click()
-            time.sleep(0.5)  # wait for any potential animations
+            # time.sleep(0.5)  # wait for any potential animations
             return True
         except (ElementClickInterceptedException, ElementNotInteractableException):
             self.logger.warning("Element not clickable, javaScript click fallback")
             try:
                 self.driver.execute_script("arguments[0].click();", element)
-                time.sleep(0.5)  # wait for any potential animations
+                # time.sleep(0.5)  # wait for any potential animations
                 return True
             except Exception as e:
                 self.logger.error(f"Oh no JavaScript click also failed: {e}")
@@ -581,7 +589,7 @@ class JobStreetScraper:
                 By.CSS_SELECTOR, "[aria-label='Close']", timeout=self.SHORT_WAIT
             )
             if close_btn and self._click_element(close_btn):
-                time.sleep(0.5)  # wait for drawer to close, do not remove this
+                time.sleep(0.3)  # wait for drawer to close, do not remove this
                 return True
             self.logger.warning("Failed to close job drawer")
             return False
