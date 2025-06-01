@@ -11,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
 from configs import init_driver, configurations
 from selenium.webdriver.common.by import By
+from datetime import datetime, timedelta
 from configs import init_logging
 import logging
 import time
@@ -80,6 +81,27 @@ class JobStreetScraper:
         cleaned = cleaned.replace("–", "-").replace("—", "-")
 
         return cleaned
+
+    def _parse_posted_date(self, date_text: str):
+        if not date_text or date_text == "N/A" or "Posted" not in date_text:
+            return "N/A"
+        try:
+            rm_posted = date_text.replace("Posted", "").strip()
+
+            if "30+" in rm_posted:
+                return "30+ days ago"
+
+            get_num = re.search(r"\d+", rm_posted)
+            if not get_num:
+                return "N/A"
+
+            days_ago = int(get_num[0])
+            posted_date = datetime.now() - timedelta(days=days_ago)
+            return posted_date.strftime("%d-%m-%Y")
+
+        except ValueError:
+            self.logger.error(f"Error parsing date text: {date_text}")
+            return "N/A"
 
     def _login_and_navigate(self):
         """Navigate to applied jobs page and handle login"""
@@ -513,7 +535,14 @@ class JobStreetScraper:
                         text = element.find_element(By.TAG_NAME, child_tag)
                         results[field] = self._clean_text(text.text.strip())
                     else:
-                        results[field] = element.text.strip()
+                        raw_text = element.text.strip()
+
+                    raw_date = self._clean_text(raw_text)
+                    if field == "job_posted_date":
+                        results[field] = self._parse_posted_date(raw_date)
+                    else:
+                        results[field] = raw_date
+
             except (TimeoutException, WebDriverException):
                 self.logger.error(f"{field} element not found or timed out")
             except Exception as e:
