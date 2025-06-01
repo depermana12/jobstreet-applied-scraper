@@ -316,28 +316,33 @@ class JobStreetScraper:
 
             # get the location of salary which is can exist or not
             # if it get a link, it means the salary is not available
+            has_salary = False
+            salary_text = "N/A"
+
             try:
                 info_salary = info_location.find_element(
                     By.XPATH, "./following-sibling::span[1]"
                 )
                 try:
                     info_salary.find_element(By.TAG_NAME, "a")
-                    salary_text = "N/A"
                     has_salary = False
-                    info_salary = None
+                    salary_text = "N/A"
+
                 except NoSuchElementException:
+                    # no link, so this is actually salary text
                     salary_text = info_salary.text.strip()
                     has_salary = "per month" in salary_text.lower()
+                    if has_salary:
+                        salary_text = salary_text.split("per month")[0].strip()
 
             except NoSuchElementException:
-                info_salary = None
-                salary_text = "N/A"
                 has_salary = False
+                salary_text = "N/A"
 
             # if the info_salary exists, info_url is the next sibling, otherwise
             # info_url is the next sibling of info_location
             try:
-                if info_salary is not None and has_salary:
+                if has_salary:
                     info_url = info_salary.find_element(
                         By.XPATH, "./following-sibling::span[1]/a"
                     )
@@ -346,6 +351,7 @@ class JobStreetScraper:
                         By.XPATH, "./following-sibling::span[1]/a"
                     )
                 url_text = info_url.get_attribute("href").strip().split("?")[0]
+
             except (NoSuchElementException, AttributeError):
                 self.logger.info("Job URL not found or not available")
                 url_text = "N/A"
@@ -532,16 +538,17 @@ class JobStreetScraper:
                     )
                 if element:
                     if child_tag:
-                        text = element.find_element(By.TAG_NAME, child_tag)
-                        results[field] = self._clean_text(text.text.strip())
+                        text_element = element.find_element(By.TAG_NAME, child_tag)
+                        raw_text = text_element.text.strip()
                     else:
                         raw_text = element.text.strip()
 
-                    raw_date = self._clean_text(raw_text)
+                    cleaned_text = self._clean_text(raw_text)
+
                     if field == "job_posted_date":
-                        results[field] = self._parse_posted_date(raw_date)
+                        results[field] = self._parse_posted_date(cleaned_text)
                     else:
-                        results[field] = raw_date
+                        results[field] = cleaned_text
 
             except (TimeoutException, WebDriverException):
                 self.logger.error(f"{field} element not found or timed out")
