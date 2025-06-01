@@ -62,56 +62,73 @@ def init_driver(browser="firefox", profile_name="default", headless=False):
         raise
 
 
-def init_firefox_driver(use_profile=None, headless=False):
+def init_firefox_driver(profile_name=None, headless=False):
     try:
+        logger.info(f"Initializing firefox driver with profile: {profile_name}")
         options = FirefoxOptions()
 
+        profile_dir = None
         if platform.system() == "Linux":
             profile_dir = os.path.expanduser("~/.mozilla/firefox")
-        elif platform.system() == "Darwin":
+        elif platform.system() == "Darwin":  # macOS
             profile_dir = os.path.expanduser(
                 "~/Library/Application Support/Firefox/Profiles"
             )
         elif platform.system() == "Windows":
             profile_dir = os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles")
         else:
-            raise OSError("Unsupported OS for Firefox profiles.")
+            raise OSError(f"Unsupported operating system: {platform.system()}")
 
         if not os.path.exists(profile_dir):
             raise FileNotFoundError(
                 f"Firefox profile directory not found: {profile_dir}"
             )
 
-        if os.path.exists(profile_dir):
-            for folder in os.listdir(profile_dir):
-                if folder.endswith(f".{use_profile}") or use_profile == "default":
-                    profile_path = os.path.join(profile_dir, folder)
-                    break
+        profile = None
+        for folder in os.listdir(profile_dir):
+            if folder.endswith(f".{profile_name}") or profile_name == "default":
+                profile = os.path.join(profile_dir, folder)
+                break
 
-        if not profile_path:
+        if not profile:
             raise FileNotFoundError(
-                f"Firefox profile '{use_profile}' not found in {profile_dir}"
+                f"Firefox profile '{profile_name}' not found in {profile_dir}"
             )
 
-        profile = FirefoxProfile(profile_path)
-        options.profile = profile
+        firefox_profile = FirefoxProfile(profile)
+        options.profile = firefox_profile
+        logger.info(f"Using firefox profile: {profile}")
 
         if headless:
             options.add_argument("--headless")
             options.add_argument("--disable-gpu")
+            logger.info(f"Firefox running in headless mode")
 
+        #  disable notification
         options.set_preference("dom.webnotifications.enabled", False)
         options.set_preference("dom.push.enabled", False)
         options.set_preference("permissions.default.desktop-notification", 2)
+
+        # anti-detection
         options.set_preference("dom.webdriver.enabled", False)
         options.set_preference("useAutomationExtension", False)
 
         driver = webdriver.Firefox(options=options)
+        # firefox not support --start-maximize preference, manual here
         if not headless:
             driver.maximize_window()
 
+        if headless:
+            driver.execute_script(
+                """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+            """
+            )
+
         time.sleep(2)
-        logger.info(f"Initialized Firefox driver with profile: {use_profile}")
+        logger.info("Firefox driver initialized successfully")
         return driver
 
     except Exception as e:
@@ -121,43 +138,33 @@ def init_firefox_driver(use_profile=None, headless=False):
 
 def init_chrome_driver(profile_name=None, headless=False):
     try:
+        cleanup_chrome_temp_dir()
         options = ChromeOptions()
+
+        # chrome requires custom user data directory when using remote debugging
+        # no need to lookup where the default profile dir
+        # to avoid issues with the default user data directory.
+        temp_user_data_dir = tempfile.mkdtemp(prefix="chrome_selenium_")
+        options.add_argument(f"--user-data-dir={temp_user_data_dir}")
 
         if profile_name:
             options.add_argument(f"--profile-directory={profile_name}")
-
-        if platform.system() == "Linux":
-            base_dir = os.path.expanduser("~/.config/google-chrome")
-        elif platform.system() == "Darwin":  # macOS
-            base_dir = os.path.expanduser("~/Library/Application Support/Google/Chrome")
-        elif platform.system() == "Windows":
-            base_dir = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data")
-        else:
-            raise OSError("Unsupported OS for Chrome profiles.")
-
-        if not os.path.exists(base_dir):
-            raise FileNotFoundError(f"Chrome profile directory not found: {base_dir}")
-
-        profile_path = os.path.join(base_dir, profile_name)
-        if not os.path.exists(profile_path):
-            raise FileNotFoundError(
-                f"Chrome profile '{profile_name}' not found in {base_dir}"
-            )
+        logger.info(f"Using temporary chrome profile dir: {temp_user_data_dir}")
 
         if headless:
-            options.add_argument("--headless")
+            options.add_argument("--headless=new")
             options.add_argument("--disable-gpu")
+            logger.info(f"Chrome running in headless mode")
 
-        # chrome requires you to set a custom user data directory when using remote debugging
-        # to avoid issues with the default user data directory.
-        temp_user_data_dir = tempfile.mkdtemp(prefix="chrome_selenium_")
-
-        options.add_argument(f"--user-data-dir={temp_user_data_dir}")
-        options.add_argument(f"profile-directory={profile_name}")
         options.add_argument("--start-maximized")
+
+        # disable notifications and other features
         options.add_argument("--disable-notifications")
         options.add_argument("--disable-infobars")
         options.add_argument("--disable-extensions")
+        options.add_argument("--disable-popup-blocking")
+
+        # disable automation flags
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
@@ -177,11 +184,14 @@ def init_chrome_driver(profile_name=None, headless=False):
                 Object.defineProperty(navigator, 'userAgent', {
                     get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 });
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
             """
             )
 
         time.sleep(2)
-        logger.info(f"Initialized Chrome driver with profile: {profile_name}")
+        logger.info("Chrome driver initialized successfully")
         return driver
 
     except Exception as e:
