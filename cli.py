@@ -26,4 +26,11 @@ def cli_scraper_parser():
         help="Export format for the scraped data",
     )
 
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable logging to console",
+    )
+
     return parser.parse_args()

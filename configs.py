@@ -16,7 +16,7 @@ configurations = {
 }
 
 
-def init_logging(log_dir="logs", log_file="jobstreet_scraper.log", log_console=True):
+def init_logging(log_dir="logs", log_file="jobstreet_scraper.log", log_console=False):
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, log_file)
     handlers = [logging.FileHandler(log_path, encoding="utf-8")]

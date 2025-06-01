@@ -12,12 +12,9 @@ from selenium.webdriver.common.keys import Keys
 from configs import init_driver, configurations
 from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
-from configs import init_logging
 import logging
 import time
 import re
-
-init_logging()
 
 
 class JobStreetScraper:
@@ -195,9 +192,7 @@ class JobStreetScraper:
                         )
                     )
 
-                    self.logger.info(
-                        "Successfully logged in and navigated to applied jobs page"
-                    )
+                    self.logger.info("Successfully logged into applied jobs page")
                     return True
 
                 except TimeoutException:
@@ -258,7 +253,6 @@ class JobStreetScraper:
                     By.CSS_SELECTOR, "[data-automation^='job-item-']"
                 )
             )
-            self.logger.info("Confirmed on applied jobs page, job cards found")
             return True
         except TimeoutException:
             self.logger.warning("Not on job applied jobs page, job cards not found")
