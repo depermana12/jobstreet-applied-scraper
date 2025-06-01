@@ -1,10 +1,12 @@
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.chrome.options import Options
 from selenium import webdriver
-from selenium import webdriver
+from pathlib import Path
+import tempfile
 import platform
 import logging
+import shutil
 import time
 import os
 
@@ -15,6 +17,8 @@ configurations = {
     "short_wait": 3,
     "default_not_available": "N/A",
 }
+
+logger = logging.getLogger(__name__)
 
 
 def init_logging(log_dir="logs", log_file="jobstreet_scraper.log", log_console=False):
@@ -33,57 +37,34 @@ def init_logging(log_dir="logs", log_file="jobstreet_scraper.log", log_console=F
     )
 
 
-def init_driver(use_profile="default"):
-    options = Options()
+def init_driver(browser="firefox", profile_name="default", headless=False):
 
-    firefox_profile_dir = None
-    if platform.system() == "Linux":
-        firefox_profile_dir = os.path.expanduser("~/.mozilla/firefox")
-    elif platform.system() == "Darwin":  # macOS
-        firefox_profile_dir = os.path.expanduser(
-            "~/Library/Application Support/Firefox/Profiles"
-        )
-    elif platform.system() == "Windows":
-        firefox_profile_dir = os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles")
-    else:
-        print("Unsupported OS. Please use Linux, macOS, or Windows.")
-        return None
-
-    if not firefox_profile_dir:
-        raise FileNotFoundError(
-            "Firefox profile directory not found. Please ensure Firefox is installed."
+    browser = browser.lower()
+    if browser not in ["firefox", "chrome"]:
+        raise ValueError(
+            f"Unsupported browser {browser}. Please use 'firefox' or 'chrome'."
         )
 
-    profile_path = None
-    if os.path.exists(firefox_profile_dir):
-        for folder in os.listdir(firefox_profile_dir):
-            if folder.endswith(f".{use_profile}") or use_profile == "default":
-                profile_path = os.path.join(firefox_profile_dir, folder)
-                break
+    if profile_name is None:
+        profile_name = "default" if browser == "firefox" else "Default"
 
-    if not profile_path:
-        raise FileNotFoundError(
-            f"Firefox profile '{use_profile}' not found in {firefox_profile_dir}"
-        )
+    logger.info(f"Initializing {browser} driver with profile: {profile_name}")
 
-    profile = FirefoxProfile(profile_path)
-    options.profile = profile
-
-    options.add_argument("--start-maximized")
-    options.set_preference("dom.webnotifications.enabled", False)
-    options.set_preference("dom.push.enabled", False)
-    options.set_preference("permissions.default.desktop-notification", 2)
-    options.set_preference("dom.webdriver.enabled", False)
-    options.set_preference("useAutomationExtension", False)
-
-    driver = webdriver.Firefox(options=options)
-    time.sleep(2)
-    return driver
-
-
-def init_firefox_driver(use_profile="default", headless=False):
     try:
-        options = Options()
+        if browser == "firefox":
+            return init_firefox_driver(profile_name, headless)
+        elif browser == "chrome":
+            return init_chrome_driver(profile_name, headless)
+        else:
+            raise ValueError(f"Unsupported browser {browser}")
+    except Exception as e:
+        logger.error(f"Error initializing {browser} driver: {e}")
+        raise
+
+
+def init_firefox_driver(use_profile=None, headless=False):
+    try:
+        options = FirefoxOptions()
 
         if platform.system() == "Linux":
             profile_dir = os.path.expanduser("~/.mozilla/firefox")
@@ -113,6 +94,7 @@ def init_firefox_driver(use_profile="default", headless=False):
             )
 
         profile = FirefoxProfile(profile_path)
+        options.profile = profile
 
         if headless:
             options.add_argument("--headless")
@@ -124,23 +106,25 @@ def init_firefox_driver(use_profile="default", headless=False):
         options.set_preference("dom.webdriver.enabled", False)
         options.set_preference("useAutomationExtension", False)
 
-        options.profile = profile
         driver = webdriver.Firefox(options=options)
         if not headless:
             driver.maximize_window()
 
         time.sleep(2)
-        logging.info(f"Initialized Firefox driver with profile: {use_profile}")
+        logger.info(f"Initialized Firefox driver with profile: {use_profile}")
         return driver
 
     except Exception as e:
-        logging.error(f"Error initializing Firefox driver: {e}")
+        logger.error(f"Error initializing Firefox driver: {e}")
         raise
 
 
-def init_chrome_driver(profile_name="Default", headless=False):
+def init_chrome_driver(profile_name=None, headless=False):
     try:
-        options = Options()
+        options = ChromeOptions()
+
+        if profile_name:
+            options.add_argument(f"--profile-directory={profile_name}")
 
         if platform.system() == "Linux":
             base_dir = os.path.expanduser("~/.config/google-chrome")
@@ -163,7 +147,12 @@ def init_chrome_driver(profile_name="Default", headless=False):
         if headless:
             options.add_argument("--headless")
             options.add_argument("--disable-gpu")
-        options.add_argument(f"user-data-dir={base_dir}")
+
+        # chrome requires you to set a custom user data directory when using remote debugging
+        # to avoid issues with the default user data directory.
+        temp_user_data_dir = tempfile.mkdtemp(prefix="chrome_selenium_")
+
+        options.add_argument(f"--user-data-dir={temp_user_data_dir}")
         options.add_argument(f"profile-directory={profile_name}")
         options.add_argument("--start-maximized")
         options.add_argument("--disable-notifications")
@@ -171,76 +160,44 @@ def init_chrome_driver(profile_name="Default", headless=False):
         options.add_argument("--disable-extensions")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
+        options.add_experimental_option("prefs", {"translate": {"enabled": False}})
+
+        options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
 
         driver = webdriver.Chrome(options=options)
 
+        if headless:
+            driver.execute_script(
+                """
+                Object.defineProperty(navigator, 'userAgent', {
+                    get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                });
+            """
+            )
+
         time.sleep(2)
-        logging.info(f"Initialized Chrome driver with profile: {profile_name}")
+        logger.info(f"Initialized Chrome driver with profile: {profile_name}")
         return driver
 
     except Exception as e:
-        logging.error(f"Error initializing Chrome driver: {e}")
+        logger.error(f"Error initializing Chrome driver: {e}")
         raise
 
 
-def list_all_profiles(browser="firefox"):
+def cleanup_chrome_temp_dir():
     try:
-        browser = browser.lower()
-
-        if browser.lower() == "firefox":
-
-            if platform.system() == "Linux":
-                profile_dir = os.path.expanduser("~/.mozilla/firefox")
-            elif platform.system() == "Darwin":
-                profile_dir = os.path.expanduser(
-                    "~/Library/Application Support/Firefox/Profiles"
-                )
-            elif platform.system() == "Windows":
-                profile_dir = os.path.expandvars(r"%APPDATA%\Mozilla\Firefox\Profiles")
-            else:
-                raise OSError("Unsupported OS for Firefox profiles.")
-
-            if os.path.exists(profile_dir):
-                return [
-                    folder
-                    for folder in os.listdir(profile_dir)
-                    if os.path.isdir(os.path.join(profile_dir, folder))
-                ]
-            else:
-                logging.warning(f"Firefox profile directory not found: {profile_dir}")
-                return []
-
-        elif browser.lower() == "chrome":
-
-            if platform.system() == "Linux":
-                profile_dir = os.path.expanduser("~/.config/google-chrome")
-            elif platform.system() == "Darwin":
-                profile_dir = os.path.expanduser(
-                    "~/Library/Application Support/Google/Chrome"
-                )
-            elif platform.system() == "Windows":
-                profile_dir = os.path.expandvars(
-                    r"%LOCALAPPDATA%\Google\Chrome\User Data"
-                )
-            else:
-                raise OSError("Unsupported OS for Chrome profiles.")
-
-            if os.path.exists(profile_dir):
-                return [
-                    folder
-                    for folder in os.listdir(profile_dir)
-                    if os.path.isdir(os.path.join(profile_dir, folder))
-                    and (folder.startswith("Profile") or folder == "Default")
-                ]
-            else:
-                logging.warning(f"Chrome profile directory not found: {profile_dir}")
-                return []
-
-        else:
-            raise ValueError(f"Unsupported browser: {browser}")
-
+        temp_dir = Path(tempfile.gettempdir())
+        for dir in temp_dir.glob("chrome_selenium_*"):
+            if dir.is_dir():
+                try:
+                    shutil.rmtree(dir)
+                    logger.debug(f"Cleanup up chrome temp directory: {dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean temp directory {dir}: {e}")
     except Exception as e:
-        logging.error(f"Error listing {browser} profiles: {e}")
-        return []
+        logger.warning(f"Error during temp directory cleanup: {e}")
