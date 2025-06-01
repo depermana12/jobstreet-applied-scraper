@@ -69,6 +69,18 @@ class JobStreetScraper:
             self.logger.error(f"WebDriver exception while finding element: {e}")
             return None
 
+    def _clean_text(self, text):
+        if not text or text == "N/A":
+            return text
+
+        # remove invisible characters (zero-width space, word joiner, etc.)
+        cleaned = re.sub(r"[\u2060\u200B-\u200F\uFEFF]", "", text)
+
+        # Replace em dash and en dash with regular hyphen
+        cleaned = cleaned.replace("–", "-").replace("—", "-")
+
+        return cleaned
+
     def _login_and_navigate(self):
         """Navigate to applied jobs page and handle login"""
         try:
@@ -321,7 +333,7 @@ class JobStreetScraper:
                     "job_title": info_title.text.strip(),
                     "company_name": info_company.text.strip(),
                     "job_location": info_location.text.strip(),
-                    "job_salary": salary_text.replace("–", "-"),
+                    "job_salary": self._clean_text(salary_text),
                     "job_url": url_text,
                 }
             )
@@ -391,17 +403,13 @@ class JobStreetScraper:
             "cover_letter": "N/A",
         }
 
-        def clean_text(text):
-            # remove U+2060 and other invisible characters
-            return re.sub(r"[\u2060\u200B-\u200F\uFEFF]", "", text).strip()
-
         try:
             cv_element = WebDriverWait(drawer, self.SHORT_WAIT).until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "span[data-automation='job-item-resume']")
                 )
             )
-            cv_text = clean_text(cv_element.text)
+            cv_text = self._clean_text(cv_element.text.strip())
         except (TimeoutException, WebDriverException):
             self.logger.error("Resume element not found or timed out")
             cv_text = "N/A"
@@ -411,7 +419,7 @@ class JobStreetScraper:
                     (By.CSS_SELECTOR, "span[data-automation='job-item-cover-letter']")
                 )
             )
-            cl_text = clean_text(cl_element.text)
+            cl_text = self._clean_text(cl_element.text.strip())
         except (TimeoutException, WebDriverException):
             self.logger.error("Cover letter element not found or timed out")
             cl_text = "N/A"
@@ -442,6 +450,90 @@ class JobStreetScraper:
         except (TimeoutException, WebDriverException):
             self.logger.error("Applicants element not found or timed out")
             return None
+
+    def _open_info_url_in_new_tab(self, info_url):
+        original_window = self.driver.current_window_handle
+        try:
+            self.driver.execute_script(f"window.open('{info_url}', '_blank');")
+            WebDriverWait(self.driver, self.LONG_WAIT).until(
+                lambda d: len(d.window_handles) > 1
+            )
+
+            new_windows = [
+                w for w in self.driver.window_handles if w != original_window
+            ]
+
+            if not new_windows:
+                self.logger.error("No new window opened after clicking job URL")
+                return None
+
+            self.driver.switch_to.window(new_windows[0])
+
+            WebDriverWait(self.driver, self.LONG_WAIT).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            return original_window
+
+        except TimeoutException:
+            self.logger.error("New window did not open in time")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error opening job URL in new tab: {e}")
+            return None
+
+    def _extract_extra_info_from_new_tab(self):
+        results = {
+            "job_classification": "N/A",
+            "job_type": "N/A",
+            "job_posted_date": "N/A",
+        }
+
+        extractions = [
+            (
+                "job_classification",
+                "span[data-automation='job-detail-classifications']",
+                "a",
+            ),
+            ("job_type", "span[data-automation='job-detail-work-type']", "a"),
+            ("job_posted_date", "//span[contains(text(), 'Posted')]", None),
+        ]
+
+        for field, selector, child_tag in extractions:
+            try:
+                if selector.startswith("//"):
+                    element = self._find_element(
+                        By.XPATH, selector, timeout=self.SHORT_WAIT
+                    )
+                else:
+                    element = self._find_element(
+                        By.CSS_SELECTOR, selector, timeout=self.SHORT_WAIT
+                    )
+                if element:
+                    if child_tag:
+                        text = element.find_element(By.TAG_NAME, child_tag)
+                        results[field] = self._clean_text(text.text.strip())
+                    else:
+                        results[field] = element.text.strip()
+            except (TimeoutException, WebDriverException):
+                self.logger.error(f"{field} element not found or timed out")
+            except Exception as e:
+                self.logger.error(f"Unexpected error extracting {field}: {e}")
+
+        return results
+
+    def _close_info_tab(self, original_window):
+        try:
+            if len(self.driver.window_handles) > 1:
+                self.driver.close()
+            if original_window and original_window in self.driver.window_handles:
+                self.driver.switch_to.window(original_window)
+            else:
+                if self.driver.window_handles:
+                    self.driver.switch_to.window(self.driver.window_handles[0])
+                    self.logger.warning("Switched to fallback window")
+
+        except WebDriverException as e:
+            self.logger.error(f"Error closing info tab or switching back: {e}")
 
     def _close_drawer(self):
         """Close the job details drawer"""
@@ -494,6 +586,21 @@ class JobStreetScraper:
                             continue
 
                         info = self._extract_job_info_from_drawer(drawer)
+
+                        if info.get("job_url") != "N/A":
+                            original_window = self._open_info_url_in_new_tab(
+                                info["job_url"]
+                            )
+                            if original_window is None:
+                                self.logger.error(
+                                    "Failed to open job URL in new tab, skipping..."
+                                )
+                                continue
+                            try:
+                                extra_info = self._extract_extra_info_from_new_tab()
+                            finally:
+                                self._close_info_tab(original_window)
+
                         status = self._extract_status_from_drawer(drawer)
                         docs = self._extract_docs_name_from_drawer(drawer)
                         applicants = self._extract_stats_from_drawer(drawer)
@@ -506,6 +613,9 @@ class JobStreetScraper:
                                 "job_title": info["job_title"],
                                 "company_name": info["company_name"],
                                 "job_location": info["job_location"],
+                                "job_classification": extra_info["job_classification"],
+                                "job_type": extra_info["job_type"],
+                                "job_posted_date": extra_info["job_posted_date"],
                                 "salary_range": info["job_salary"],
                                 "job_url": info["job_url"],
                                 "resume": docs["resume"],
@@ -545,7 +655,7 @@ class JobStreetScraper:
         """Navigate to the next page of applied jobs"""
         try:
             next_btn = self._find_element(
-                By.CSS_SELECTOR, "[aria-label='Next page']", self.SHORT_WAIT
+                By.CSS_SELECTOR, "a[aria-label='Next']", self.SHORT_WAIT
             )
             if not next_btn:
                 self.logger.warning("Next page button not found")
