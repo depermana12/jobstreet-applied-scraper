@@ -5,3 +5,5 @@ venv/
 *.pyc
 exports/*.json
 logs/*.log
+logs/*.csv
+logs/*.xlsx

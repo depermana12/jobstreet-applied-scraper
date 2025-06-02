@@ -14,17 +14,18 @@ def main():
             print("Invalid email format. Please try again.")
         email = input("Enter your Jobstreet email: ").strip()
     max_pages = max_validation(args.max)
-    export_type = args.export
 
     init_logging(log_console=args.verbose)
 
     scraper = JobStreetScraper(
         email=email,
+        browser=args.browser,
+        headless=args.headless,
     )
 
     try:
         jobs = scraper.scrape_all_jobs(max_pages=max_pages)
-        export_to(export_type, jobs, filename="jobstreet_jobs")
+        export_to(args.export, jobs, filename="jobstreet_jobs")
     except Exception as e:
         print(f"An error occurred: {e}")
     finally:

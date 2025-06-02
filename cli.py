@@ -32,5 +32,19 @@ def cli_scraper_parser():
         action="store_true",
         help="Enable logging to console",
     )
+    parser.add_argument(
+        "-b",
+        "--browser",
+        type=str,
+        choices=["chrome", "firefox"],
+        default="chrome",
+        help="Browser to use for scraping (default: chrome)",
+    )
+    parser.add_argument(
+        "-h",
+        "--headless",
+        action="store_true",
+        help="Run the browser in headless mode (default: false)",
+    )
 
     return parser.parse_args()
