@@ -1,6 +1,6 @@
 # JobStreet Applied Jobs Scraper
 
-A Python tool to **scrape your applied jobs from JobStreet** and export the data to JSON, CSV, or Excel.  
+A Python tool to **scrape your applied jobs from JobStreet** and export the data to `json` or `csv`.  
 This project uses Selenium to automate browser actions and pandas for data export.
 
 ---
@@ -10,7 +10,9 @@ This project uses Selenium to automate browser actions and pandas for data expor
 1. **Requirements:**
 
    - Python 3.10 or higher
-   - Firefox browser latest version
+   - browsers:
+     - Firefox (latest version)
+     - Chrome (latest version)
    - Windows, macOS, or Linux
 
 2. **Clone this repository:**
@@ -33,6 +35,8 @@ This project uses Selenium to automate browser actions and pandas for data expor
    source venv/bin/activate # activate venv on macOS/Linux
    ```
 
+   if you are using vscode, you can create venv by pressing `Ctrl + Shift + P` and type `Python: Create Environment` then select `venv` as the environment type.
+
 4. **Install dependencies:**
 
    ```sh
@@ -46,42 +50,152 @@ This project uses Selenium to automate browser actions and pandas for data expor
 Run the scraper from the project directory using the command line:
 
 ```sh
-python main.py --email "your_email@example.com" --max 1 --export csv
+python main.py -e your_email@example.com --chrome --desc -f json
 ```
 
-**Arguments:**
+### **Command Line Arguments:**
 
-- `--email` or `-e`: Your JobStreet email address (required)
-- `--max` or `-m`: Number of pages to scrape (`1`, `2`, ..., or `all` for all available pages)
-- `--export` or `-x`: Export format (`json`, `csv`, or `excel`)
+#### **Required:**
+
+- `-e, --email`: Your JobStreet email address
+
+#### **Browser Selection:**
+
+- `--chrome`: Use Chrome browser
+- `--firefox`: Use Firefox browser
+- **Default:** Firefox if neither specified
+
+#### **Browser Mode:**
+
+- `--headless`: Run browser without GUI (background mode)
+- **Default:** GUI mode (browser window visible)
+
+#### **Scraping Order:**
+
+- `--asc`: Scrape jobs in ascending order (newest first) - **Default**
+- `--desc`: Scrape jobs in descending order (oldest first, chronological)
+
+#### **Export Format:**
+
+- `-f, --format`: Export format - choices: `json`, `csv`
+- **Default:** `json`
+
+#### **Logging:**
+
+- `-v, --verbose`: Enable detailed logging to console
+- **Default:** disabled (just look the log file)
+
+### **Example Commands:**
+
+```sh
+# Basic usage with defaults (Firefox, newest first, JSON)
+python main.py -e "user@example.com"
+
+# Chrome browser, oldest first, CSV export
+python main.py -e "user@example.com" --chrome --desc -f csv
+
+# Chrome browser, newest first, headless mode, oldest first, CSV export
+python main.py -e "user@example.com" --chrome --headless --desc -f csv
+
+# Firefox headless mode, newest first order, JSON export
+python main.py -e "user@example.com" --firefox --headless
+```
 
 If you omit `--email`, you will be prompted to enter it interactively.
 
+### Important Notes
+
+If you encounter chrome error in the terminal, just ignore it, it is just a warning from selenium about the browser version, you can ignore it, because the scraper will still work.
+
 ---
+
+## Example Output Data
+
+Here's an example of the JSON output:
+
+```json
+[
+  {
+    "id": 1,
+    "job_platform": "JobStreet",
+    "data_retrieved_at": "02-06-2025 15:07:38",
+    "job_title": "Senior Software Engineer (TypeScript/React)",
+    "company_name": "PT Tech Pojok Cafe",
+    "job_location": "Jakarta Selatan, Jakarta Raya",
+    "job_classification": "Teknologi Informasi & Komunikasi",
+    "job_type": "Full time",
+    "job_posted_date": "30+ days ago",
+    "salary_range": "Rp 15.000.000 - Rp 20.000.000",
+    "job_url": "https://example.com/job/82532982",
+    "resume": "bismillah-my-cv-ver3.1-final-bgt.pdf",
+    "cover_letter": "Tidak ada surat lamaran terkirim",
+    "total_applicants": 163,
+    "is_expired": true,
+    "application_status": [
+      {
+        "status": "Dilamar di JobStreet",
+        "updated_at": "5 Mar 2025"
+      },
+      {
+        "status": "Dilihat oleh perusahaan",
+        "updated_at": "5 Mar 2025"
+      },
+      {
+        "status": "Kemungkinan tidak dilanjutkan",
+        "updated_at": "7 Mar 2025"
+      }
+    ]
+  },
+  ...
+  ...
+  ...
+]
+```
 
 ## Scraping Flow
 
-1. **Clean Firefox Profile:**
+1. **Browser Launch:**
 
-   The scraper launches Firefox with a clean profile to avoid session issues.  
-   **You will need to log in to JobStreet** as if on a new browser, that is why you need to enter your email in cli arguments
+   The scraper launches your chosen browser (Chrome/Firefox) with optimized settings to avoid detection issues.  
+   **You will need to log in to JobStreet** as the scraper uses a clean browser session.
 
 2. **Login & OTP:**
 
-   Jobstreet login requires an OTP sent to your email.
+   JobStreet login requires an OTP sent to your email.
 
-   - The script will open Firefox and navigate to the JobStreet login page.
-   - The script will handle putting email automatically in the login form.
-   - Enter OTP code manually when prompted in the terminal.
+   - The script opens the browser and navigates to the JobStreet login page
+   - The script automatically fills in your email address
+   - **Enter OTP code manually** when prompted in the terminal
+   - The script will wait for you to complete the login process
 
 3. **Scraping:**
 
-   - The script navigates to your "Applied Jobs" page.
-   - It scrapes job details (title, company, location, salary, status, resume, cover letter, applicants, etc.) for each job card.
-   - It continues to the next page until the specified max or all jobs are scraped.
+   - Automatically navigates to your "Applied Jobs" page
+   - Scrapes all available job details:
+     - Job title, company name, location
+     - Salary range, job classification, job type
+     - Application status, posting date
+     - Resume and cover letter used
+     - Total applicants count
+   - **Processes ALL pages automatically** (JobStreet shows max ~90 jobs)
+   - Respects rate limiting to avoid being blocked
 
 4. **Export:**
-   - The results are exported to the format you choose (`json`, `csv`, or `excel`) in the `exports/` directory with a timestamped filename.
+   - Results are exported to your chosen format (`json` or `csv`)
+   - Files are saved in the `exports/` directory with timestamped filenames
+
+---
+
+## Troubleshooting
+
+### **Common Issues:**
+
+1. **OTP not received in headless mode:**
+
+   ```sh
+   # Use non-headless mode for login
+   python main.py -e "user@example.com" --chrome
+   ```
 
 ---
 
@@ -90,11 +204,12 @@ If you omit `--email`, you will be prompted to enter it interactively.
 ```
 JobstreetScrapper/
 │
-├── main.py           # Entry point
-├── scraper.py        # Scraper logic
-├── exporter.py       # Export functions
-├── configs.py        # Configuration and driver setup
-├── cli.py            # CLI argument parsing
+├── main.py           # Entry point with CLI integration
+├── scraper.py        # Core scraping logic
+├── exporter.py       # Export functions (JSON/CSV)
+├── configs.py        # Browser configuration and driver setup
+├── cli.py            # Command line argument parsing
+├── helpers.py        # Utility functions (email validation, etc.)
 ├── requirements.txt  # Python dependencies
 └── exports/          # Output files (auto-created)
 ```
@@ -103,8 +218,10 @@ JobstreetScrapper/
 
 ## Disclaimer
 
-- This tool is for **personal use** and **learning purposes**. Do not use it for commercial scraping or violate JobStreet's terms of service.
-- The scraper may break if JobStreet changes its website structure or login flow.
-- If you encounter issues with browser automation, ensure your browser and GeckoDriver versions are compatible.
+- This tool is for **personal use** and **learning purposes** only
+- Do not use for commercial scraping or violate JobStreet's terms of service
+- The scraper may break if JobStreet changes its website structure
+- Ensure your browser drivers are up to date for compatibility
+- Use responsibly and respect rate limits
 
 ---

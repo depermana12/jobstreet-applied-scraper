@@ -3,8 +3,8 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from selenium import webdriver
 from pathlib import Path
-import tempfile
 import platform
+import tempfile
 import logging
 import shutil
 import time
@@ -12,10 +12,8 @@ import os
 
 configurations = {
     "base_url": "https://id.jobstreet.com/id/my-activity/applied-jobs",
-    "profile_name": "default",  # this is clean profile. 'default-release' is existing profile but hangs
     "default_wait": 20,
     "short_wait": 3,
-    "default_not_available": "N/A",
 }
 
 logger = logging.getLogger(__name__)

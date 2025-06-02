@@ -14,7 +14,6 @@ from selenium.webdriver.common.by import By
 from datetime import datetime, timedelta
 from rich.console import Console
 from rich.status import Status
-from rich.panel import Panel
 import logging
 import time
 import re
@@ -603,131 +602,155 @@ class JobStreetScraper:
             self.logger.error(f"Error closing job drawer: {e}")
             return False
 
-    def scrape_all_jobs(self, max_pages=None):
-        """Main scraping method"""
+    def _scrape_page(self, page_num, total_jobs_so_far, reverse_cards=False):
+        console = Console()
+        jobs_processed = 0
 
+        console.print(f"[bold cyan]Processing page {page_num}...[/]")
+        self.logger.info(f"Processing page {page_num}")
+
+        job_cards = self._find_job_cards()
+        if not job_cards:
+            self.logger.warning("No job cards found on this page")
+            console.print("[bold red]No job cards found on this page[/]")
+            return jobs_processed
+
+        console.print(
+            f"[bold yellow]Found {len(job_cards)} job cards on page {page_num}[/]"
+        )
+        if reverse_cards:
+            job_cards = list(reversed(job_cards))
+
+        for i, card in enumerate(job_cards, 1):
+            job_start = time.time()
+
+            with Status(
+                f"[yellow]Processing job {i}/{len(job_cards)} on page {page_num}...[/]",
+                console=console,
+                spinner="dots",
+            ):
+                self.logger.info(f"Processing job {i}/{len(job_cards)}")
+
+                job_info = {
+                    "id": total_jobs_so_far + jobs_processed + 1,
+                    "job_platform": "JobStreet",
+                }
+
+                try:
+                    drawer = self._open_drawer(card)
+                    if not drawer:
+                        self.logger.warning("Failed to open job drawer, skipping...")
+                        continue
+
+                    info = self._extract_job_info_from_drawer(drawer)
+
+                    if info.get("job_url") != "N/A":
+                        original_window = self._open_info_url_in_new_tab(
+                            info["job_url"]
+                        )
+                        if original_window is None:
+                            self.logger.error(
+                                "Failed to open job URL in new tab, skipping..."
+                            )
+                            continue
+                        try:
+                            extra_info = self._extract_extra_info_from_new_tab()
+                        finally:
+                            self._close_info_tab(original_window)
+
+                    status = self._extract_status_from_drawer(drawer)
+                    docs = self._extract_docs_name_from_drawer(drawer)
+                    applicants = self._extract_stats_from_drawer(drawer)
+
+                    job_info.update(
+                        {
+                            "data_retrieved_at": time.strftime(
+                                "%d-%m-%Y %H:%M:%S", time.localtime()
+                            ),
+                            "job_title": info["job_title"],
+                            "company_name": info["company_name"],
+                            "job_location": info["job_location"],
+                            "job_classification": extra_info["job_classification"],
+                            "job_type": extra_info["job_type"],
+                            "job_posted_date": extra_info["job_posted_date"],
+                            "salary_range": info["job_salary"],
+                            "job_url": info["job_url"],
+                            "resume": docs["resume"],
+                            "cover_letter": docs["cover_letter"],
+                            "total_applicants": (
+                                applicants if applicants is not None else "N/A"
+                            ),
+                            "is_expired": status["is_expired"],
+                            "application_status": status["application_status"],
+                        }
+                    )
+
+                    self._close_drawer()
+
+                except Exception as e:
+                    self.logger.error(f"Error processing job card {i}: {e}")
+                    continue
+
+                self.jobs_data.append(job_info)
+                jobs_processed += 1
+                elapsed = time.time() - job_start
+                console.print(
+                    f"[green]✔ Finished job {i}/{len(job_cards)} in {elapsed:.2f}s[/]"
+                )
+        self.logger.info(f"Completed page {page_num}, jobs processed: {jobs_processed}")
+        console.print(f"[bold green]✔ Completed page {page_num}[/]")
+        return jobs_processed
+
+    def scrape_all_jobs(self, reverse=False):
+        """Main scraping method"""
         console = Console()
         start_time = time.time()
-        console.print("[bold cyan]Starting JobStreet scraping[/]")
-
-        self._login_and_navigate()
-        self.logger.info("Starting job scraping")
-
-        page_num = 0
         total_jobs = 0
 
+        self._login_and_navigate()
+        console.print("[bold cyan]Starting JobStreet scraping[/]")
+        self.logger.info("Starting job scraping")
+
         try:
-            while True:
-                page_num += 1
-                self.logger.info(f"Processing page {page_num}")
+            if reverse:
+                console.print("[bold yellow]Analyzing pages in reverse order...[/]")
+                last_page_num = self._find_last_page()
+                console.print(f"[bold yellow]Last page found: {last_page_num}[/]")
+                self.logger.info(f"Last page found: {last_page_num}")
 
-                job_cards = self._find_job_cards()
-                if not job_cards:
-                    self.logger.warning("No more job cards found")
-                    break
+                for page_num in range(last_page_num, 0, -1):
+                    total_jobs += self._scrape_page(
+                        page_num, total_jobs, reverse_cards=True
+                    )
 
-                for i, card in enumerate(job_cards, 1):
-                    job_start = time.time()
-
-                    with Status(
-                        f"[yellow]Processing job {i}/{len(job_cards)} on page {page_num}...[/]",
-                        console=console,
-                        spinner="dots",
-                    ):
-                        self.logger.info(f"Processing job {i}/{len(job_cards)}")
-
-                        job_info = {
-                            "id": total_jobs + 1,
-                            "job_platform": "JobStreet",
-                        }
-
-                        try:
-                            drawer = self._open_drawer(card)
-                            if not drawer:
-                                self.logger.warning(
-                                    "Failed to open job drawer, skipping..."
-                                )
-                                continue
-
-                            info = self._extract_job_info_from_drawer(drawer)
-
-                            if info.get("job_url") != "N/A":
-                                original_window = self._open_info_url_in_new_tab(
-                                    info["job_url"]
-                                )
-                                if original_window is None:
-                                    self.logger.error(
-                                        "Failed to open job URL in new tab, skipping..."
-                                    )
-                                    continue
-                                try:
-                                    extra_info = self._extract_extra_info_from_new_tab()
-                                finally:
-                                    self._close_info_tab(original_window)
-
-                            status = self._extract_status_from_drawer(drawer)
-                            docs = self._extract_docs_name_from_drawer(drawer)
-                            applicants = self._extract_stats_from_drawer(drawer)
-
-                            job_info.update(
-                                {
-                                    "data_retrieved_at": time.strftime(
-                                        "%d-%m-%Y %H:%M:%S", time.localtime()
-                                    ),
-                                    "job_title": info["job_title"],
-                                    "company_name": info["company_name"],
-                                    "job_location": info["job_location"],
-                                    "job_classification": extra_info[
-                                        "job_classification"
-                                    ],
-                                    "job_type": extra_info["job_type"],
-                                    "job_posted_date": extra_info["job_posted_date"],
-                                    "salary_range": info["job_salary"],
-                                    "job_url": info["job_url"],
-                                    "resume": docs["resume"],
-                                    "cover_letter": docs["cover_letter"],
-                                    "total_applicants": (
-                                        applicants if applicants is not None else "N/A"
-                                    ),
-                                    "is_expired": status["is_expired"],
-                                    "application_status": status["application_status"],
-                                }
+                    if page_num > 1:
+                        if not self._go_to_prev_page():
+                            self.logger.warning(
+                                "Failed to navigate to previous page..."
                             )
+                            break
+            else:
+                page_num = 0
+                while True:
+                    page_num += 1
+                    total_jobs += self._scrape_page(
+                        page_num, total_jobs, reverse_cards=False
+                    )
 
-                            self._close_drawer()
-
-                        except Exception as e:
-                            self.logger.error(f"Error processing job card {i}: {e}")
-                            continue
-
-                        self.jobs_data.append(job_info)
-                        total_jobs += 1
-                        elapsed = time.time() - job_start
-                        console.print(
-                            f"[green]✔ Finished job {i}/{len(job_cards)} in {elapsed:.2f}s[/]"
-                        )
-
-                self.logger.info(f"Completed page {page_num}, total jobs: {total_jobs}")
-                console.print(f"[bold green]✔ Completed page {page_num}[/]")
-
-                if max_pages and page_num >= max_pages:
-                    self.logger.info(f"Reached maximum pages: {max_pages}")
-                    break
-
-                if not self._go_to_next_page():
-                    self.logger.warning("No more pages available")
-                    break
-
+                    if not self._go_to_next_page():
+                        self.logger.warning("No more pages available")
+                        break
         finally:
             total_elapsed = time.time() - start_time
-            console.print(
-                Panel.fit(
-                    f"[bold green]✅ Scraping completed![/]\n[cyan]Total jobs collected: {total_jobs}[/]\n[magenta]Total elapsed time: {total_elapsed:.2f} seconds[/]",
-                    title="[bold]JobStreet Scraper[/]",
-                )
-            )
             self.logger.info(f"Scraping completed. Total jobs collected: {total_jobs}")
-            return self.jobs_data
+            return {
+                "jobs_data": self.jobs_data,
+                "total_jobs": total_jobs,
+                "total_elapsed": total_elapsed,
+                "scraping_completed_at": time.strftime(
+                    "%d-%m-%Y %H:%M:%S", time.localtime()
+                ),
+            }
 
     def _go_to_next_page(self):
         """Navigate to the next page of applied jobs"""
@@ -757,12 +780,14 @@ class JobStreetScraper:
                 )
                 return False
 
-            if not self._is_on_applied_jobs_page():
-                self.logger.warning("No job cards found on the next page")
-                return False
+            WebDriverWait(self.driver, self.LONG_WAIT).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "[data-automation^='job-item-']")
+                )
+            )
 
             time.sleep(2)  # wait for the page to load
-            self.driver.execute_script("window.scrollTo(0, 0);")
+            # self.driver.execute_script("window.scrollTo(0, 0);")
 
             self.logger.info("Successfully navigated to next page")
             console.print("[bold green]Navigated to next page[/]")
@@ -771,6 +796,55 @@ class JobStreetScraper:
         except WebDriverException as e:
             self.logger.error(f"Failed to go to next page: {e}")
             return False
+
+    def _go_to_prev_page(self):
+
+        try:
+            prev_btn = self._find_element(
+                By.CSS_SELECTOR, "a[aria-label='Previous']", self.SHORT_WAIT
+            )
+            if not prev_btn:
+                self.logger.warning("Previous page button not found")
+                return False
+            current_url = self.driver.current_url
+
+            if not self._click_element(prev_btn):
+                self.logger.error("Failed to click previous page button")
+                return False
+            try:
+                WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                    lambda d: d.current_url != current_url
+                )
+                WebDriverWait(self.driver, self.LONG_WAIT).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, "[data-automation^='job-item-']")
+                    )
+                )
+            except TimeoutException:
+                self.logger.error(
+                    "Redirecting error: page url did not change after clicking previous"
+                )
+                return False
+
+            time.sleep(2)  # wait for the page to load
+            self.logger.info("Successfully navigated to previous page")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to go to previous page: {e}")
+            return False
+
+    def _find_last_page(self):
+        page_num = 1
+        while True:
+            # TODO: scroll to bottom maybe
+            if not self._go_to_next_page():
+                self.logger.info("No more pages available, stopping search")
+                break
+            page_num += 1
+
+        self.logger.info(f"Last page found: {page_num}")
+        return page_num
 
     def close_browser(self):
         """Close the browser"""
