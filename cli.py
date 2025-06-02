@@ -41,7 +41,6 @@ def cli_scraper_parser():
         help="Browser to use for scraping (default: chrome)",
     )
     parser.add_argument(
-        "-h",
         "--headless",
         action="store_true",
         help="Run the browser in headless mode (default: false)",

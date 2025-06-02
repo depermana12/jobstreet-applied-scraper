@@ -37,7 +37,7 @@ def init_logging(log_dir="logs", log_file="jobstreet_scraper.log", log_console=F
     )
 
 
-def init_driver(browser="firefox", profile_name="default", headless=False):
+def init_driver(browser="firefox", profile_name=None, headless=False):
 
     browser = browser.lower()
     if browser not in ["firefox", "chrome"]:
