@@ -9,5 +9,7 @@ def email_validation(email: str):
 def max_validation(max_page: str):
     if max_page.lower() == "all":
         return None
-    else:
+
+    if max_page.isdigit() and int(max_page) > 0:
         return int(max_page)
+    return None
