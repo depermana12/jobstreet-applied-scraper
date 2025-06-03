@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "jobstreetscrapper"
+version = "1.0.2"
+description = "jobstreet applied jobs scraper - export to json or csv"
+authors = ["depermana12<deddiapermana97@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+selenium = ">=4.33.0,<5.0.0"
+rich = ">=14.0.0,<15.0.0"
+
+
+[tool.poetry.group.dev.dependencies]
+isort = "^6.0.1"
+flake8 = "^7.2.0"
+pytest = "^8.4.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+

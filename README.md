@@ -1,56 +1,92 @@
 # JobStreet Applied Jobs Scraper
 
 A Python tool to **scrape your applied jobs from JobStreet** and export the data to `json` or `csv`.  
-This project uses Selenium to automate browser actions and pandas for data export.
+This project uses Selenium to automate browser actions.
 
 ---
 
 ## Get This Repo & Installation
 
-1. **Requirements:**
+### **Requirements:**
 
-   - Python 3.10 or higher
-   - browsers:
-     - Firefox (latest version)
-     - Chrome (latest version)
-   - Windows, macOS, or Linux
+- Python 3.11 or higher
+- [Poetry](https://python-poetry.org/docs/#installation) package manager
+- browsers:
+  - Firefox (latest version)
+  - Chrome (latest version)
+- Windows, macOS, or Linux
+
+## **Installation Methods:**
+
+### **For Poetry Installation (Recommended):**
+
+1. **Install Poetry** (if not already installed):
+
+   ```sh
+   # Windows (PowerShell)
+   (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
+
+   # macOS/Linux
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
 
 2. **Clone this repository:**
 
    ```sh
    git clone https://github.com/depermana12/jobstreet-applied-scraper.git
-
    cd jobstreet-applied-scraper
    ```
 
-3. **Install and activate a virtual environment:**
+3. **Install dependencies with Poetry:**
 
    ```sh
-   python -m venv venv # create a virtual environment
-
-   venv\Scripts\activate # activate venv on windows cmd
-
-   venv\Scripts\activate.ps1 # activate venv on windows powershell
-
-   source venv/bin/activate # activate venv on macOS/Linux
+   # Install all dependencies
+   poetry install
    ```
 
-   if you are using vscode, you can create venv by pressing `Ctrl + Shift + P` and type `Python: Create Environment` then select `venv` as the environment type.
+### **For Docker (only firefox headless)**
 
-4. **Install dependencies:**
+1. **Build and run with Docker:**
 
    ```sh
-   pip install -r requirements.txt
+   # Build the image
+   docker build -t jobstreet-scraper .
+
+   # Run the scraper
+   docker run -it --rm \
+     -v "$(pwd)/exports:/app/exports" \
+     -v "$(pwd)/logs:/app/logs" \
+     jobstreet-scraper \
+     -e "your_email@example.com" -f csv
    ```
 
 ---
 
 ## Usage
 
-Run the scraper from the project directory using the command line:
+### **Poetry Usage (Recommended):**
 
 ```sh
-python main.py -e your_email@example.com --chrome --desc -f json
+# Run with Poetry
+poetry run python main.py -e your_email@example.com --chrome --desc -f json
+```
+
+### **Docker Usage (firefox headless):**
+
+```sh
+# Windows PowerShell
+docker run -it --rm `
+  -v "${PWD}/exports:/app/exports" `
+  -v "${PWD}/logs:/app/logs" `
+  jobstreet-scraper `
+  -e "your_email@example.com" --firefox --headless -f json
+
+# Linux/macOS
+docker run -it --rm \
+  -v "$(pwd)/exports:/app/exports" \
+  -v "$(pwd)/logs:/app/logs" \
+  jobstreet-scraper \
+  -e "your_email@example.com" --firefox --headless -f json
 ```
 
 ### **Command Line Arguments:**
@@ -87,25 +123,37 @@ python main.py -e your_email@example.com --chrome --desc -f json
 
 ### **Example Commands:**
 
+#### **Poetry Examples:**
+
 ```sh
-# Basic usage with defaults (Firefox, newest first, JSON)
-python main.py -e "user@example.com"
-
 # Chrome browser, oldest first, CSV export
-python main.py -e "user@example.com" --chrome --desc -f csv
+poetry run python main.py -e "user@example.com" --chrome --desc -f csv
 
-# Chrome browser, newest first, headless mode, oldest first, CSV export
-python main.py -e "user@example.com" --chrome --headless --desc -f csv
+# Chrome browser, oldest first, headless mode, CSV export
+poetry run python main.py -e "user@example.com" --chrome --headless --desc -f csv
 
-# Firefox headless mode, newest first order, JSON export
-python main.py -e "user@example.com" --firefox --headless
+# Firefox browser, newest first, headless mode, JSON export
+poetry run python main.py -e "user@example.com" --firefox --asc --headless -f json
 ```
 
+#### **Docker Examples:**
+
+```sh
+# Basic Docker usage
+docker run --rm \
+  -v "$(pwd)/exports:/app/exports" \
+  -v "$(pwd)/logs:/app/logs" \
+  jobstreet-scraper \
+  -e "user@example.com" -f csv
+
 If you omit `--email`, you will be prompted to enter it interactively.
+```
 
 ### Important Notes
 
-If you encounter chrome error in the terminal, just ignore it, it is just a warning from selenium about the browser version, you can ignore it, because the scraper will still work.
+- If you encounter Chrome errors in the terminal, you can usually ignore them - they're often just warnings
+- For Docker usage on Windows, use PowerShell and `${PWD}` instead of `$(pwd)`
+- Headless mode is faster but may have issues with OTP delivery
 
 ---
 
@@ -145,10 +193,7 @@ Here's an example of the JSON output:
         "updated_at": "7 Mar 2025"
       }
     ]
-  },
-  ...
-  ...
-  ...
+  }
 ]
 ```
 
@@ -186,33 +231,38 @@ Here's an example of the JSON output:
 
 ---
 
-## Troubleshooting
-
-### **Common Issues:**
-
-1. **OTP not received in headless mode:**
-
-   ```sh
-   # Use non-headless mode for login
-   python main.py -e "user@example.com" --chrome
-   ```
-
----
-
 ## Project Structure
 
 ```
 JobstreetScrapper/
 │
-├── main.py           # Entry point with CLI integration
-├── scraper.py        # Core scraping logic
-├── exporter.py       # Export functions (JSON/CSV)
-├── configs.py        # Browser configuration and driver setup
-├── cli.py            # Command line argument parsing
-├── helpers.py        # Utility functions (email validation, etc.)
-├── requirements.txt  # Python dependencies
-└── exports/          # Output files (auto-created)
+├── pyproject.toml        # Poetry configuration & dependencies
+├── poetry.lock          # Locked dependency versions
+├── Dockerfile           # Container configuration
+├── docker-compose.yml   # Multi-container setup
+├── .dockerignore        # Docker build exclusions
+├── main.py              # Entry point with CLI integration
+├── scraper.py           # Core scraping logic
+├── exporter.py          # Export functions (JSON/CSV)
+├── configs.py           # Browser configuration and driver setup
+├── cli.py               # Command line argument parsing
+├── helpers.py           # Utility functions (email validation, etc.)
+├── requirements.txt     # Legacy pip compatibility (optional)
+├── exports/             # Output files (auto-created)
+├── logs/                # Log files (auto-created)
+└── README.md            # This file
 ```
+
+---
+
+## Technology Stack
+
+- **Python 3.11+**:
+- **Poetry**: Dependency management and packaging
+- **Selenium**: Web browser automation
+- **Rich**: Beautiful terminal output and progress bars
+- **Docker**: Containerization
+- **Firefox/Chrome**: Supported browsers
 
 ---
 
