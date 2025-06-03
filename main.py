@@ -5,6 +5,7 @@ from rich.console import Console
 from configs import init_logging
 from exporter import export_to
 from rich.panel import Panel
+import logging
 
 
 def main():
@@ -24,6 +25,7 @@ def main():
 
     sort_by = args.sort == "desc"
     init_logging(log_console=args.verbose)
+    logger = logging.getLogger(__name__)
 
     scraper = JobStreetScraper(
         email=email,
@@ -53,6 +55,11 @@ def main():
                 border_style="green",
             )
         )
+        logger.info(
+            f"Scraping completed: {total_jobs} jobs collected in {total_elapsed:.2f} seconds."
+        )
+        logger.info(f"Exported data to {export_data} in {args.format} format.")
+        logger.info(f"Scraping completed at {completed_at}.")
 
     except Exception as e:
         console.print(f"[bold red]An error occurred:[/] {e}")
@@ -66,6 +73,7 @@ def main():
                 border_style="red",
             )
         )
+        logger.error(f"Error during scraping: {e}")
     finally:
         scraper.close_browser()
         console.print("[dim]Browser closed.[/]")

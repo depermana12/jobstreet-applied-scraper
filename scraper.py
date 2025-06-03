@@ -320,67 +320,46 @@ class JobStreetScraper:
                     (By.XPATH, ".//span[contains(text(), 'Lamaran untuk')]")
                 )
             )
-            info_title = info_holder.find_element(
-                By.XPATH, "./following-sibling::h3[1]"
-            )
-            info_company = info_title.find_element(
-                By.XPATH, "./following-sibling::span[1]"
-            )
-            info_location = info_company.find_element(
-                By.XPATH, "./following-sibling::span[1]"
-            )
+            siblings = info_holder.find_elements(By.XPATH, "./following-sibling::*")
 
-            # get the location of salary which is can exist or not
-            # if it get a link, it means the salary is not available
-            has_salary = False
-            salary_text = "N/A"
+            if len(siblings) >= 3:
+                info_title = siblings[0]  # h3
+                info_company = siblings[1]  # span
+                info_location = siblings[2]  # span
 
-            try:
-                info_salary = info_location.find_element(
-                    By.XPATH, "./following-sibling::span[1]"
+                results.update(
+                    {
+                        "job_title": info_title.text.strip(),
+                        "company_name": info_company.text.strip(),
+                        "job_location": info_location.text.strip(),
+                    }
                 )
-                try:
-                    info_salary.find_element(By.TAG_NAME, "a")
-                    has_salary = False
-                    salary_text = "N/A"
 
-                except NoSuchElementException:
-                    # no link, so this is actually salary text
-                    salary_text = info_salary.text.strip()
-                    has_salary = "per month" in salary_text.lower()
-                    if has_salary:
-                        salary_text = salary_text.split("per month")[0].strip()
-
-            except NoSuchElementException:
-                has_salary = False
-                salary_text = "N/A"
-
-            # if the info_salary exists, info_url is the next sibling, otherwise
-            # info_url is the next sibling of info_location
-            try:
-                if has_salary:
-                    info_url = info_salary.find_element(
-                        By.XPATH, "./following-sibling::span[1]/a"
+            # Handle salary and URL in one pass
+            if len(siblings) >= 4:
+                fourth_element = siblings[3]
+                # Check if it contains salary or URL
+                if fourth_element.find_elements(By.TAG_NAME, "a"):
+                    # Has link, no salary
+                    url_element = fourth_element.find_element(By.TAG_NAME, "a")
+                    results["job_url"] = (
+                        url_element.get_attribute("href").strip().split("?")[0]
                     )
                 else:
-                    info_url = info_location.find_element(
-                        By.XPATH, "./following-sibling::span[1]/a"
-                    )
-                url_text = info_url.get_attribute("href").strip().split("?")[0]
+                    # Has salary text
+                    salary_text = fourth_element.text.strip()
+                    if "per month" in salary_text.lower():
+                        salary_raw = salary_text.split("per month")[0].strip()
+                        cleaned_salary = self._clean_text(salary_raw)
+                        results["job_salary"] = cleaned_salary
 
-            except (NoSuchElementException, AttributeError):
-                self.logger.info("Job URL not found or not available")
-                url_text = "N/A"
+                    # Check next sibling for URL
+                    if len(siblings) >= 5:
+                        url_element = siblings[4].find_element(By.TAG_NAME, "a")
+                        results["job_url"] = (
+                            url_element.get_attribute("href").strip().split("?")[0]
+                        )
 
-            results.update(
-                {
-                    "job_title": info_title.text.strip(),
-                    "company_name": info_company.text.strip(),
-                    "job_location": info_location.text.strip(),
-                    "job_salary": self._clean_text(salary_text),
-                    "job_url": url_text,
-                }
-            )
         except (NoSuchElementException, TimeoutException, WebDriverException) as e:
             self.logger.error(f"Error extracting job info from drawer: {e}")
         return results
@@ -625,7 +604,7 @@ class JobStreetScraper:
             job_start = time.time()
 
             with Status(
-                f"[yellow]Processing job {i}/{len(job_cards)} on page {page_num}...[/]",
+                f"[yellow]Processing job {i}/{len(job_cards)} [/]",
                 console=console,
                 spinner="dots",
             ):
@@ -713,7 +692,7 @@ class JobStreetScraper:
 
         try:
             if reverse:
-                console.print("[bold yellow]Analyzing pages in reverse order...[/]")
+                console.print("[bold yellow] Analyzing pages in descending order...[/]")
                 last_page_num = self._find_last_page()
                 console.print(f"[bold yellow]Last page found: {last_page_num}[/]")
                 self.logger.info(f"Last page found: {last_page_num}")
@@ -782,11 +761,11 @@ class JobStreetScraper:
 
             WebDriverWait(self.driver, self.LONG_WAIT).until(
                 EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "[data-automation^='job-item-']")
+                    (By.CSS_SELECTOR, "[data-automation^='job-item-1']")
                 )
             )
 
-            time.sleep(2)  # wait for the page to load
+            time.sleep(1)  # wait for the page to load
             # self.driver.execute_script("window.scrollTo(0, 0);")
 
             self.logger.info("Successfully navigated to next page")
@@ -817,7 +796,7 @@ class JobStreetScraper:
                 )
                 WebDriverWait(self.driver, self.LONG_WAIT).until(
                     EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[data-automation^='job-item-']")
+                        (By.CSS_SELECTOR, "[data-automation='job-item-1']")
                     )
                 )
             except TimeoutException:
@@ -826,7 +805,7 @@ class JobStreetScraper:
                 )
                 return False
 
-            time.sleep(2)  # wait for the page to load
+            time.sleep(1)  # wait for the page to load
             self.logger.info("Successfully navigated to previous page")
             return True
 
@@ -843,7 +822,6 @@ class JobStreetScraper:
                 break
             page_num += 1
 
-        self.logger.info(f"Last page found: {page_num}")
         return page_num
 
     def close_browser(self):

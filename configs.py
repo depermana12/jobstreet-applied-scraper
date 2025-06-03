@@ -171,7 +171,7 @@ def init_chrome_driver(profile_name=None, headless=False):
         options.add_experimental_option("prefs", {"translate": {"enabled": False}})
 
         options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
         driver = webdriver.Chrome(options=options)
@@ -180,7 +180,7 @@ def init_chrome_driver(profile_name=None, headless=False):
             driver.execute_script(
                 """
                 Object.defineProperty(navigator, 'userAgent', {
-                    get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
                 });
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined,
