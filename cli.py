@@ -47,14 +47,14 @@ def cli_scraper_parser():
         const="desc",
         help="Scrape jobs in descending order, chronologically (oldest first)",
     )
-    parser.set_defaults(sort="asc")
+    parser.set_defaults(sort="desc")
 
     parser.add_argument(
         "-f",
         "--format",
         type=str,
-        choices=["json", "csv"],
-        default="json",
+        choices=["json", "csv", "all"],
+        default="all",
         help="Export format for the scraped data (default: %(default)s)",
     )
 

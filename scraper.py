@@ -24,6 +24,7 @@ class JobStreetScraper:
         self.email = email
         self.driver = None
         self.browser = browser
+        self.profile_path = None
         self.headless = headless
         self._initialize_driver()
         self.base_url = configurations["base_url"]
@@ -35,10 +36,12 @@ class JobStreetScraper:
     def _initialize_driver(self):
         console = Console()
         try:
-            self.driver = init_driver(self.browser, None, headless=self.headless)
+            self.driver = init_driver(self.browser, headless=self.headless)
             console.print(
                 f"[bold green]WebDriver {self.driver.name} initialized successfully![/]"
             )
+            if self.browser == "firefox" and hasattr(self.driver, "firefox_profile"):
+                self.profile_path = getattr(self.driver.firefox_profile, "path", None)
         except (Exception, WebDriverException) as e:
             self.logger.error(f"Failed to initialize WebDriver: {e}")
             raise
@@ -79,9 +82,6 @@ class JobStreetScraper:
         except TimeoutException:
             self.logger.warning(f"Element not found: {value}")
             return None
-        except WebDriverException as e:
-            self.logger.error(f"WebDriver exception while finding element: {e}")
-            return None
 
     def _clean_text(self, text):
         if not text or text == "N/A":
@@ -89,10 +89,8 @@ class JobStreetScraper:
 
         # remove invisible characters (zero-width space, word joiner, etc.)
         cleaned = re.sub(r"[\u2060\u200B-\u200F\uFEFF]", "", text)
-
         # Replace em dash and en dash with regular hyphen
         cleaned = cleaned.replace("–", "-").replace("—", "-")
-
         return cleaned
 
     def _parse_posted_date(self, date_text: str):
@@ -124,10 +122,8 @@ class JobStreetScraper:
             self.logger.error(f"Error navigating to {self.base_url}: {e}")
             return False
 
-        wait = WebDriverWait(self.driver, self.LONG_WAIT)
-
         try:
-            email_input = wait.until(
+            email_input = WebDriverWait(self.driver, self.LONG_WAIT).until(
                 EC.presence_of_element_located((By.ID, "emailAddress"))
             )
             email_input.clear()
@@ -245,9 +241,6 @@ class JobStreetScraper:
         except TimeoutException:
             self.logger.warning("No job cards found on this page")
             return []
-        except WebDriverException as e:
-            self.logger.error(f"WebDriver exception while finding job cards: {e}")
-            return []
 
     def _sort_job_cards(self, elements):
         """Sort job cards by their index number"""
@@ -261,24 +254,6 @@ class JobStreetScraper:
             return 0
 
         return sorted(elements, key=get_index)
-
-    def _is_on_applied_jobs_page(self):
-        """Check if it's on applied jobs page by looking for job cards"""
-        try:
-            if "applied-jobs" not in self.driver.current_url.lower():
-                self.logger.warning("URL does not contain 'applied-jobs'")
-                return False
-
-            wait = WebDriverWait(self.driver, self.SHORT_WAIT)
-            wait.until(
-                lambda d: d.find_element(
-                    By.CSS_SELECTOR, "[data-automation^='job-item-']"
-                )
-            )
-            return True
-        except TimeoutException:
-            self.logger.warning("Not on job applied jobs page, job cards not found")
-            return False
 
     def _open_drawer(self, job_card):
         """Open drawer for each job card by clicking the header"""
@@ -568,18 +543,14 @@ class JobStreetScraper:
 
     def _close_drawer(self):
         """Close the job details drawer"""
-        try:
-            close_btn = self._find_element(
-                By.CSS_SELECTOR, "[aria-label='Close']", timeout=self.SHORT_WAIT
-            )
-            if close_btn and self._click_element(close_btn):
-                time.sleep(0.3)  # wait for drawer to close, do not remove this
-                return True
-            self.logger.warning("Failed to close job drawer")
-            return False
-        except (TimeoutException, WebDriverException) as e:
-            self.logger.error(f"Error closing job drawer: {e}")
-            return False
+        close_btn = self._find_element(
+            By.CSS_SELECTOR, "[aria-label='Close']", timeout=self.SHORT_WAIT
+        )
+        if close_btn and self._click_element(close_btn):
+            time.sleep(0.3)  # wait for drawer to close, do not remove this
+            return True
+        self.logger.warning("Failed to close job drawer")
+        return False
 
     def _scrape_page(self, page_num, total_jobs_so_far, reverse_cards=False):
         console = Console()
@@ -731,87 +702,67 @@ class JobStreetScraper:
                 ),
             }
 
-    def _go_to_next_page(self):
-        """Navigate to the next page of applied jobs"""
+    def _navigate_page(self, direction="next"):
         console = Console()
+        direction_map = {
+            "next": {"aria_label": "Next", "log": "next page"},
+            "prev": {"aria_label": "Previous", "log": "previous page"},
+        }
+        if direction not in direction_map:
+            self.logger.error(f"Invalid navigation direction: {direction}")
+            return False
 
         try:
-            next_btn = self._find_element(
-                By.CSS_SELECTOR, "a[aria-label='Next']", self.SHORT_WAIT
+            btn = self._find_element(
+                By.CSS_SELECTOR,
+                f"a[aria-label='{direction_map[direction]['aria_label']}']",
+                self.SHORT_WAIT,
             )
-            if not next_btn:
-                self.logger.warning("Next page button not found")
+            if not btn:
+                self.logger.warning(
+                    f"{direction_map[direction]['log'].capitalize()} button not found"
+                )
                 return False
 
             current_url = self.driver.current_url
-
-            if not self._click_element(next_btn):
-                self.logger.error("Failed to click next page button")
-                return False
-
-            try:
-                WebDriverWait(self.driver, self.SHORT_WAIT).until(
-                    lambda d: d.current_url != current_url
-                )
-            except TimeoutException:
+            if not self._click_element(btn):
                 self.logger.error(
-                    "Redirecting error: page url did not change after clicking next"
+                    f"Failed to click {direction_map[direction]['log']} button"
                 )
                 return False
 
+            WebDriverWait(self.driver, self.SHORT_WAIT).until(
+                lambda d: d.current_url != current_url
+            )
             WebDriverWait(self.driver, self.LONG_WAIT).until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "[data-automation^='job-item-1']")
                 )
             )
-
             time.sleep(1)  # wait for the page to load
-            # self.driver.execute_script("window.scrollTo(0, 0);")
-
-            self.logger.info("Successfully navigated to next page")
-            console.print("[bold green]Navigated to next page[/]")
+            self.logger.info(
+                f"Successfully navigated to {direction_map[direction]['log']}"
+            )
+            console.print(
+                f"[bold green]Navigated to {direction_map[direction]['log']}[/]"
+            )
             return True
-
-        except WebDriverException as e:
-            self.logger.error(f"Failed to go to next page: {e}")
+        except TimeoutException:
+            self.logger.error(
+                f"Redirecting error: page URL did not change after clicking {direction_map[direction]['log']}"
+            )
             return False
+        except Exception as e:
+            self.logger.error(
+                f"Failed to navigate to {direction_map[direction]['log']}: {e}"
+            )
+            return False
+
+    def _go_to_next_page(self):
+        return self._navigate_page(direction="next")
 
     def _go_to_prev_page(self):
-
-        try:
-            prev_btn = self._find_element(
-                By.CSS_SELECTOR, "a[aria-label='Previous']", self.SHORT_WAIT
-            )
-            if not prev_btn:
-                self.logger.warning("Previous page button not found")
-                return False
-            current_url = self.driver.current_url
-
-            if not self._click_element(prev_btn):
-                self.logger.error("Failed to click previous page button")
-                return False
-            try:
-                WebDriverWait(self.driver, self.SHORT_WAIT).until(
-                    lambda d: d.current_url != current_url
-                )
-                WebDriverWait(self.driver, self.LONG_WAIT).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[data-automation='job-item-1']")
-                    )
-                )
-            except TimeoutException:
-                self.logger.error(
-                    "Redirecting error: page url did not change after clicking previous"
-                )
-                return False
-
-            time.sleep(1)  # wait for the page to load
-            self.logger.info("Successfully navigated to previous page")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to go to previous page: {e}")
-            return False
+        return self._navigate_page(direction="prev")
 
     def _find_last_page(self):
         page_num = 1
@@ -821,7 +772,6 @@ class JobStreetScraper:
                 self.logger.info("No more pages available, stopping search")
                 break
             page_num += 1
-
         return page_num
 
     def close_browser(self):

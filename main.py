@@ -1,3 +1,4 @@
+from configs import cleanup_webdriver_temp_dir
 from scraper import JobStreetScraper
 from helpers import email_validation
 from cli import cli_scraper_parser
@@ -18,8 +19,10 @@ def main():
     completed_at = "N/A"
     export_data = "N/A"
 
-    while not email or not email_validation(email):
-        if email and not email_validation(email):
+    while True:
+        if email and email_validation(email):
+            break
+        if email:
             console.print("Invalid email format. Please try again.")
         email = console.input("Enter your Jobstreet email: ").strip()
 
@@ -75,8 +78,10 @@ def main():
         )
         logger.error(f"Error during scraping: {e}")
     finally:
-        scraper.close_browser()
-        console.print("[dim]Browser closed.[/]")
+        if scraper:
+            cleanup_webdriver_temp_dir(scraper.driver, scraper.profile_path)
+            scraper.close_browser()
+            console.print("[dim]Browser closed and temporary files cleaned up.[/]")
 
 
 if __name__ == "__main__":

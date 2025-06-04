@@ -18,8 +18,6 @@ This project uses Selenium to automate browser actions.
 
 ## **Installation Methods:**
 
-### **For Poetry Installation (Recommended):**
-
 1. **Install Poetry** (if not already installed):
 
    ```sh
@@ -44,49 +42,15 @@ This project uses Selenium to automate browser actions.
    poetry install
    ```
 
-### **For Docker (only firefox headless)**
-
-1. **Build and run with Docker:**
-
-   ```sh
-   # Build the image
-   docker build -t jobstreet-scraper .
-
-   # Run the scraper
-   docker run -it --rm \
-     -v "$(pwd)/exports:/app/exports" \
-     -v "$(pwd)/logs:/app/logs" \
-     jobstreet-scraper \
-     -e "your_email@example.com" -f csv
-   ```
-
 ---
 
 ## Usage
 
-### **Poetry Usage (Recommended):**
+### **Poetry Usage:**
 
 ```sh
 # Run with Poetry
-poetry run python main.py -e your_email@example.com --chrome --desc -f json
-```
-
-### **Docker Usage (firefox headless):**
-
-```sh
-# Windows PowerShell
-docker run -it --rm `
-  -v "${PWD}/exports:/app/exports" `
-  -v "${PWD}/logs:/app/logs" `
-  jobstreet-scraper `
-  -e "your_email@example.com" --firefox --headless -f json
-
-# Linux/macOS
-docker run -it --rm \
-  -v "$(pwd)/exports:/app/exports" \
-  -v "$(pwd)/logs:/app/logs" \
-  jobstreet-scraper \
-  -e "your_email@example.com" --firefox --headless -f json
+poetry run python main.py -e your_email@example.com
 ```
 
 ### **Command Line Arguments:**
@@ -99,7 +63,7 @@ docker run -it --rm \
 
 - `--chrome`: Use Chrome browser
 - `--firefox`: Use Firefox browser
-- **Default:** Firefox if neither specified
+- **Default:** Firefox
 
 #### **Browser Mode:**
 
@@ -108,13 +72,17 @@ docker run -it --rm \
 
 #### **Scraping Order:**
 
-- `--asc`: Scrape jobs in ascending order (newest first) - **Default**
+- `--asc`: Scrape jobs in ascending order (newest first) -
 - `--desc`: Scrape jobs in descending order (oldest first, chronological)
+- **Default:** `--desc` (oldest first)
 
 #### **Export Format:**
 
-- `-f, --format`: Export format - choices: `json`, `csv`
-- **Default:** `json`
+- `-f, --format`: Export format - choices: `json`, `csv`, `all`
+  - `json`: Export to JSON file
+  - `csv`: Export to CSV file
+  - `all`: Export both JSON and CSV files
+- **Default:** `all`
 
 #### **Logging:**
 
@@ -123,37 +91,28 @@ docker run -it --rm \
 
 ### **Example Commands:**
 
-#### **Poetry Examples:**
-
 ```sh
-# Chrome browser, oldest first, CSV export
-poetry run python main.py -e "user@example.com" --chrome --desc -f csv
+# only put required email argument
+# the rest options are default to firefox, gui, descending order, and all export json and csv
+poetry run python main.py -e "user@example.com"
 
-# Chrome browser, oldest first, headless mode, CSV export
-poetry run python main.py -e "user@example.com" --chrome --headless --desc -f csv
+# Chrome browser, newest first, headless mode, CSV export
+poetry run python main.py -e "user@example.com" --chrome --headless --asc -f csv
 
 # Firefox browser, newest first, headless mode, JSON export
 poetry run python main.py -e "user@example.com" --firefox --asc --headless -f json
 ```
 
-#### **Docker Examples:**
+---
 
-```sh
-# Basic Docker usage
-docker run --rm \
-  -v "$(pwd)/exports:/app/exports" \
-  -v "$(pwd)/logs:/app/logs" \
-  jobstreet-scraper \
-  -e "user@example.com" -f csv
+## Important Notes
 
-If you omit `--email`, you will be prompted to enter it interactively.
-```
-
-### Important Notes
-
-- If you encounter Chrome errors in the terminal, you can usually ignore them - they're often just warnings
-- For Docker usage on Windows, use PowerShell and `${PWD}` instead of `$(pwd)`
-- Headless mode is faster but may have issues with OTP delivery
+- Jobstreet limits to only show 90 applied jobs history, so the scraper will only retrieve up to that limit. 5 Pages, each page 1-4 is 20 cards and page 5 is 10 cards.
+- "N/A" in the output means "Not Available" for fields that are optional like salary
+- `job_posted_date` that is "30+ days ago" means expired, also indicating in the `is_expired` field
+- Application status on csv format already normalized to show only latest update
+- If you encounter Chrome errors in the terminal, just ignore them - they're often just warnings
+- Headless mode is faster but may have issues with OTP sometimes
 
 ---
 
@@ -223,7 +182,6 @@ Here's an example of the JSON output:
      - Resume and cover letter used
      - Total applicants count
    - **Processes ALL pages automatically** (JobStreet shows max ~90 jobs)
-   - Respects rate limiting to avoid being blocked
 
 4. **Export:**
    - Results are exported to your chosen format (`json` or `csv`)
@@ -236,18 +194,14 @@ Here's an example of the JSON output:
 ```
 JobstreetScrapper/
 │
-├── pyproject.toml        # Poetry configuration & dependencies
+├── pyproject.toml       # Poetry configuration & dependencies
 ├── poetry.lock          # Locked dependency versions
-├── Dockerfile           # Container configuration
-├── docker-compose.yml   # Multi-container setup
-├── .dockerignore        # Docker build exclusions
 ├── main.py              # Entry point with CLI integration
 ├── scraper.py           # Core scraping logic
 ├── exporter.py          # Export functions (JSON/CSV)
 ├── configs.py           # Browser configuration and driver setup
 ├── cli.py               # Command line argument parsing
 ├── helpers.py           # Utility functions (email validation, etc.)
-├── requirements.txt     # Legacy pip compatibility (optional)
 ├── exports/             # Output files (auto-created)
 ├── logs/                # Log files (auto-created)
 └── README.md            # This file
@@ -255,14 +209,13 @@ JobstreetScrapper/
 
 ---
 
-## Technology Stack
+## Tech Stack
 
-- **Python 3.11+**:
+- **Python 3.11+**
+- **Firefox/Chrome**
 - **Poetry**: Dependency management and packaging
 - **Selenium**: Web browser automation
 - **Rich**: Beautiful terminal output and progress bars
-- **Docker**: Containerization
-- **Firefox/Chrome**: Supported browsers
 
 ---
 
@@ -273,5 +226,3 @@ JobstreetScrapper/
 - The scraper may break if JobStreet changes its website structure
 - Ensure your browser drivers are up to date for compatibility
 - Use responsibly and respect rate limits
-
----
